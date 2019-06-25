@@ -1,0 +1,12 @@
+{
+  "name": "drupal/commerce_klarna_checkout",
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/klarna/kco_rest_php"
+    }
+  ],
+  "require": {
+    "klarna/kco_rest": "~4"
+  }
+}

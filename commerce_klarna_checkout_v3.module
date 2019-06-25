@@ -1,0 +1,370 @@
+<?php
+
+/**
+ * @file
+ * Provides a payment method for Drupal Commerce using Klarna Checkout.
+ */
+
+use Klarna\Rest\Checkout\Order as KlarnaOrder;
+use Klarna\Rest\Transport\Connector;
+use Klarna\Rest\Transport\ConnectorInterface;
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_klarna_checkout_v3_menu() {
+  return [
+    'commerce_klarna_checkout_v3/confirm/%commerce_order/%/%commerce_klarna_checkout_v3_payment_instance' => [
+      'page callback' => 'commerce_klarna_checkout_v3_process_confirmation',
+      'page arguments' => [2, 3, 4],
+      'file' => 'commerce_klarna_checkout_v3.inc',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    ],
+    'commerce_klarna_checkout_v3/push/%commerce_order/%/%commerce_klarna_checkout_v3_payment_instance' => [
+      'page callback' => 'commerce_klarna_checkout_v3_process_push',
+      'page arguments' => [2, 3, 4],
+      'file' => 'commerce_klarna_checkout_v3.inc',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    ],
+  ];
+}
+
+/**
+ * Implements hook_commerce_checkout_pane_info().
+ */
+function commerce_klarna_checkout_v3_commerce_checkout_pane_info() {
+  $checkout_panes['commerce_klarna_checkout_v3_confirm'] = [
+    'title' => t('Klarna payment confirmation'),
+    'page' => 'complete',
+    'fieldset' => FALSE,
+    'locked' => TRUE,
+    'file' => 'includes/commerce_klarna_checkout_v3.checkout_pane.inc',
+    'base' => 'commerce_klarna_checkout_v3_confirm_pane',
+    'weight' => 10,
+  ];
+
+  return $checkout_panes;
+}
+
+/**
+ * Returns a payment method instance array which includes the settings specific
+ * to the context of the instance.
+ * For some reasons, passing the payment method instance ID to Klarna doesn't
+ * work as expected, probably due to the | character, so instead, we're passing
+ * the rule name and we rebuilt the payment method instance ID because we
+ * already know the payment method in advance.
+ *
+ * @param $rule_name
+ *   The rule part of the payment method instance ID.
+ *
+ * @return
+ *   The payment method instance object which is identical to the payment method
+ *     object with the addition of the settings array.
+ */
+function commerce_klarna_checkout_v3_payment_instance_load($rule_name) {
+  return commerce_payment_method_instance_load('klarna_checkout_v3|' . $rule_name);
+}
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_klarna_checkout_v3_commerce_payment_method_info() {
+  $payment_methods['klarna_checkout_v3'] = [
+    'base' => 'commerce_klarna_checkout_v3',
+    'title' => t('Klarna Checkout'),
+    'display_title' => t('Klarna Checkout - Choose between multiple payment methods'),
+    'short_title' => t('Klarna'),
+    'description' => t('Create a payment using Klarna.'),
+    'terminal' => FALSE,
+  ];
+  return $payment_methods;
+}
+
+/**
+ * Returns the default settings for the Klarna checkout payment method.
+ */
+function commerce_klarna_checkout_v3_default_settings() {
+  return [
+    'server' => 'test',
+    'merchant_id' => '',
+    'secret' => '',
+    'purchase_country' => 'US',
+    'locale' => 'en-US',
+    'terms_path' => '',
+    'customer_profile' => [
+      'create_billing_profile' => FALSE,
+      'create_shipping_profile' => FALSE,
+    ],
+    'options' => [
+      'allowed_customer_types' => [
+        'person'
+      ],
+      'allow_separate_shipping_address' => FALSE,
+    ],
+  ];
+}
+
+/**
+ * Payment method callback: settings form.
+ */
+function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
+  $form = [];
+
+  // Merge default settings into the stored settings array.
+  $settings = (array) $settings + commerce_klarna_checkout_v3_default_settings();
+
+  $form['merchant_id'] = [
+    '#type' => 'textfield',
+    '#title' => t('Merchant ID'),
+    '#description' => t('The unique number that identifies your e-store.'),
+    '#default_value' => $settings['merchant_id'],
+    '#required' => TRUE,
+  ];
+
+  $form['server'] = [
+    '#type' => 'radios',
+    '#title' => t('Server'),
+    '#options' => [
+      'test' => ('Test - use for testing'),
+      'live' => ('Live - use for processing real transactions'),
+    ],
+    '#default_value' => $settings['server'],
+  ];
+
+  $form['secret'] = [
+    '#type' => 'textfield',
+    '#title' => t('Shared secret'),
+    '#default_value' => $settings['secret'],
+    '#required' => TRUE,
+  ];
+
+  $form['purchase_country'] = [
+    '#type' => 'select',
+    '#options' => [
+      'US' => t('United States'),
+      'NL' => t('Netherlands'),
+      'GB' => t('United Kingdom'),
+      'DK' => t('Denmark'),
+    ],
+    '#title' => t('Purchase country'),
+    '#description' => t('ISO 4217 purchase currency.'),
+    '#default_value' => $settings['purchase_country'],
+    '#required' => TRUE,
+  ];
+
+  $form['locale'] = [
+    '#type' => 'select',
+    '#options' => [
+      'en-US' => t('English (United States)'),
+      'en-GB' => t('English (United Kingdom)'),
+      'nl-NL' => t('Dutch (Netherlands)'),
+      'da-DK' => t('Danish (Denmark)'),
+    ],
+    '#title' => t('Locale'),
+    '#description' => t("RFC 1766 customer's locale."),
+    '#default_value' => $settings['locale'],
+    '#required' => TRUE,
+  ];
+
+  $form['terms_path'] = [
+    '#type' => 'textfield',
+    '#title' => t('Path to terms and conditions page'),
+    '#default_value' => $settings['terms_path'],
+    '#required' => TRUE,
+  ];
+
+  if (module_exists('commerce_customer')) {
+    // Address field settings.
+    $form['customer_profile'] = [
+      '#type'           => 'fieldset',
+      '#title'          => t('Customer profile settings'),
+      '#collapsible'    => FALSE,
+    ];
+    $form['customer_profile']['create_billing_profile'] = [
+      '#type' => 'checkbox',
+      '#title' => t('Create billing profile using information from Klarna'),
+      '#description' => t('Using this option, you would probably want to disable the Billing information from the <a href="@url">Checkout pane</a>', ['@url' => url('admin/commerce/config/checkout')]),
+      '#default_value' => $settings['customer_profile']['create_billing_profile'],
+    ];
+    if (module_exists('commerce_shipping')) {
+      $form['customer_profile']['create_shipping_profile'] = [
+        '#type' => 'checkbox',
+        '#title' => t('Create a shipping profile using information from Klarna'),
+        '#description' => t('Using this option, you would probably want to disable the Shipping information from the <a href="@url">Checkout pane</a>', ['@url' => url('admin/commerce/config/checkout')]),
+        '#default_value'  => $settings['customer_profile']['create_shipping_profile'],
+      ];
+    }
+  }
+
+  $form['options'] = [
+    '#type' => 'fieldset',
+    '#title' => t('Options'),
+    '#collapsible' => TRUE,
+  ];
+
+  $form['options']['allowed_customer_types'] = [
+    '#type' => 'checkboxes',
+    '#title' => t('Allowed customer types'),
+    '#options' => [
+      'person' => ('Person'),
+      'organization' => ('Organization'),
+    ],
+    '#default_value' => $settings['options']['allowed_customer_types'],
+    '#required' => TRUE,
+  ];
+
+  $form['options']['allow_separate_shipping_address'] = [
+    '#type' => 'checkbox',
+    '#title' => t('Allow separate shipping address'),
+    '#description' => t('If true, the consumer can enter different billing and shipping addresses.'),
+    '#default_value' => $settings['options']['allow_separate_shipping_address'],
+  ];
+
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ */
+function commerce_klarna_checkout_v3_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  if (empty($payment_method['settings']['merchant_id']) || empty($payment_method['settings']['secret'])) {
+    return [];
+  }
+  $form = [];
+  module_load_include('inc', 'commerce_klarna_checkout_v3');
+  $klarna_order = commerce_klarna_checkout_v3_init($payment_method, $order);
+
+  if ($klarna_order && !empty($klarna_order['html_snippet'])) {
+    $form['klarna_snippet'] = [
+      '#markup' => $klarna_order['html_snippet'],
+    ];
+  }
+
+  return $form;
+}
+
+/**
+ * Returns the URL to the Klarna server.
+ *
+ * @param $settings
+ *   The payment method instance settings.
+ *
+ * @return
+ *   The URL to use to submit requests to the Klarna server.
+ */
+function commerce_klarna_checkout_v3_server_url($settings) {
+  if ($settings['purchase_country'] == 'US') {
+    if ($settings['server'] == 'test') {
+      return ConnectorInterface::NA_TEST_BASE_URL;
+    }
+    else {
+      return ConnectorInterface::NA_BASE_URL;
+    }
+  }
+  else {
+    if ($settings['server'] == 'test') {
+      return ConnectorInterface::EU_TEST_BASE_URL;
+    }
+    else {
+      return ConnectorInterface::EU_BASE_URL;
+    }
+  }
+}
+
+/**
+ * Creates an Klarna transaction for the specified charge amount.
+ *
+ * @param mixed $payment_method
+ *   The payment method instance object used to charge this payment.
+ * @param mixed $order
+ *   The order object the payment applies to.
+ * @param mixed $charge
+ *   An array indicating the amount and currency code to charge.
+ * @param \Klarna\Rest\OrderManagement\Order $klarna_order
+ *   The Klarna order object.
+ */
+function commerce_klarna_checkout_v3_transaction_save($payment_method, $order, $charge, $klarna_order) {
+  $transaction = commerce_payment_transaction_new('klarna_checkout_v3', $order->order_id);
+  $transaction->instance_id = $payment_method['instance_id'];
+  $transaction->amount = $charge['amount'];
+  $transaction->currency_code = $charge['currency_code'];
+  $transaction->remote_status = $klarna_order['status'];
+  $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
+  $transaction->remote_id = $klarna_order->getId();
+  commerce_payment_transaction_save($transaction);
+}
+
+/**
+ * Get the Klarna order ID matching the given order.
+ *
+ * @param $order_id
+ *   The order_id.
+ *
+ * @return array
+ *   An associative array containing the matching Klarna order ID for the given
+ *   order as well as a hash representing the last data sent to Klarna.
+ */
+function commerce_klarna_checkout_v3_get_mapping($order_id) {
+  return db_select('commerce_klarna_checkout', 'kc')
+    ->fields('kc')
+    ->condition('order_id', $order_id)
+    ->execute()
+    ->fetchAssoc();
+}
+
+/**
+ * Store the Klarna order ID, as well as a hash representing the order data
+ * sent for later retrieval.
+ *
+ * @param $klarna_mapping
+ *   An associative array containing the matching Klarna order ID for the given
+ *   order as well as a hash representing the last data sent to Klarna.
+ */
+function commerce_klarna_checkout_v3_store_mapping($klarna_mapping) {
+  db_merge('commerce_klarna_checkout')->key(['order_id' => $klarna_mapping['order_id']])->fields($klarna_mapping)->execute();
+}
+
+/**
+ * Fetch the Checkout order from Klarna.
+ */
+function commerce_klarna_checkout_v3_get_order($order, $payment_method = NULL) {
+  if (empty($payment_method) && isset($order->data['payment_method'])) {
+    $payment_method = commerce_payment_method_instance_load($order->data['payment_method']);
+  }
+  // The payment method instance was not passed or could not be loaded, aborting.
+  if (empty($payment_method) || !isset($payment_method['settings'])) {
+    return NULL;
+  }
+  // Get the Klarna order_id in order to fetch the order from Klarna.
+  $klarna_mapping = commerce_klarna_checkout_v3_get_mapping($order->order_id);
+
+  // IF the Klarna order_id isn't known, stop here.
+  if (!isset($klarna_mapping['klarna_order_id'])) {
+    return NULL;
+  }
+  try {
+    $connector = Connector::create(
+      $payment_method['settings']['merchant_id'],
+      $payment_method['settings']['secret'],
+      commerce_klarna_checkout_v3_server_url($payment_method['settings'])
+    );
+    $klarna_order = new KlarnaOrder($connector, $klarna_mapping['klarna_order_id']);
+    $klarna_order->fetch();
+    return $klarna_order;
+  }
+  catch (\Exception $exception) {
+    watchdog_exception('commerce_klarna_checkout_v3', $exception);
+    return NULL;
+  }
+}
+
+/**
+ * Implements hook_commerce_order_delete().
+ */
+function commerce_klarna_checkout_v3_commerce_order_delete($order) {
+  db_delete('commerce_klarna_checkout')
+    ->condition('order_id', $order->order_id)
+    ->execute();
+}
