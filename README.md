@@ -1,6 +1,6 @@
 DESCRIPTION
 ===========
-Provides a Drupal commerce Payment that integrates with Klarna checkout (v3)
+Provides a Drupal commerce payment method that integrates with Klarna checkout (v3).
 
 REQUIREMENTS
 ============
