@@ -28,6 +28,13 @@ function commerce_klarna_checkout_v3_menu() {
       'access callback' => TRUE,
       'type' => MENU_CALLBACK,
     ],
+    'commerce_klarna_checkout_v3/validate/%commerce_order' => [
+      'page callback' => 'commerce_klarna_checkout_v3_validate_order',
+      'page arguments' => [2],
+      'file' => 'commerce_klarna_checkout_v3.inc',
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+    ],
   ];
 }
 

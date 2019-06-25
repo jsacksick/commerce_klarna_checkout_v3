@@ -51,6 +51,7 @@ function commerce_klarna_checkout_v3_init($payment_method, $order) {
       // only if the current checkout page is the payment page.
       'confirmation' => url('commerce_klarna_checkout_v3/confirm/' . $order->order_id . '/' . $order->data['payment_redirect_key'] . '/' . $rule_name, $url_options),
       'push' => url('commerce_klarna_checkout_v3/push/' . $order->order_id . '/' . $order->data['payment_redirect_key'] . '/' . $rule_name, $url_options),
+      'validation' => url('commerce_klarna_checkout_v3/validate/' . $order->order_id, $url_options),
       'terms' => $settings['terms_path'],
     ],
     'order_amount' => $order_total['amount'],
@@ -404,4 +405,48 @@ function commerce_klarna_checkout_v3_create_customer_profile($klarna_address, $p
     watchdog_exception('commerce_klarna_checkout_v3', $e, 'An exception occurred while creating the billing customer profile for the order');
     return FALSE;
   }
+}
+
+/**
+ * Page callback: Validate the order before it is completed.
+ */
+function commerce_klarna_checkout_v3_validate_order($order) {
+  $klarna_order = drupal_json_decode(file_get_contents('php://input'));
+
+  // Log the data sent by Klarna, if logging is enabled.
+  if (variable_get('commerce_klarna_checkout_v3_enable_logging', FALSE)) {
+    watchdog(
+      'commerce_klarna_checkout_v3',
+      'Incoming validation request from Klarna for order id @order_id. Klarna object: <pre>@klarna</pre>.',
+      [
+        '@order_id' => $order->order_id,
+        '@klarna' => print_r($klarna_order, TRUE),
+      ],
+      WATCHDOG_DEBUG
+    );
+  }
+
+  // Give modules a chance to validate the order.
+  module_invoke_all('commerce_klarna_checkout_v3_validate_order', $order, $klarna_order);
+  $klarna_total = [
+    'currency_code' => strtoupper($klarna_order['purchase_currency']),
+    'amount' => (int) $klarna_order['order_amount'],
+  ];
+  $order_total = field_get_items('commerce_order', $order, 'commerce_order_total', LANGUAGE_NONE);
+  // Check if the total known by Klarna matches the one known by Drupal, and
+  // deny the purchase if there's a mismatch.
+  if ($order_total[0]['currency_code'] != $klarna_total['currency_code'] ||
+    $klarna_total['amount'] != $order_total[0]['amount']) {
+    watchdog('commerce_klarna_checkout_v3',
+      'Total amount mismatch for order @order_id (Klarna total: @klarna_total, Drupal total: @order_total).',
+      [
+        '@order_id' => $order->order_id,
+        '@klarna_total' => $klarna_total['amount'],
+        '@order_total' => $order_total[0]['amount'],
+      ]
+    );
+    drupal_goto('checkout/' . $order->order_id, [], 303);
+  }
+
+  return MENU_FOUND;
 }

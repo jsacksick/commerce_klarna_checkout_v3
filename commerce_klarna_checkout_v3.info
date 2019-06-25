@@ -6,4 +6,3 @@ dependencies[] = commerce_product
 dependencies[] = composer_manager
 dependencies[] = jquery_update
 core = 7.x
-php = 5.3

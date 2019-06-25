@@ -37,3 +37,15 @@ function hook_commerce_klarna_checkout_v3_create_customer_profile($profile_wrapp
   }
   $profile_wrapper->my_custom_field = $klarna_address['care_of'];
 }
+
+/**
+ * Allow modules to validate the order before it's completed.
+ *
+ * @param $order
+ *   The order.
+ * @param $klarna_order
+ *   The Klarna order object sent by Klarna.
+ */
+function hook_commerce_klarna_checkout_v3_validate_order($order, $klarna_order) {
+  // See https://developers.klarna.com/documentation/klarna-checkout/integration-guide/render-the-checkout/validate-order.
+}
