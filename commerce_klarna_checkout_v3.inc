@@ -203,7 +203,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
  */
 function commerce_klarna_checkout_v3_process_confirmation($order, $payment_redirect_key, $payment_method) {
   if (empty($payment_method['settings']['merchant_id']) || empty($payment_method['settings']['secret'])) {
-    watchdog('commerce_klarna_checkout_v3', 'The payment for the order @order_id could not be processed because the payment method is not correctly configured.', ['@order_id' => $order->order_id], WATCHDOG_ERROR);
+    watchdog('commerce_klarna_checkout_v3', 'Cannot show the payment confirmation snippet for the order @order_id because the payment method is not correctly configured.', ['@order_id' => $order->order_id], WATCHDOG_ERROR);
     return MENU_NOT_FOUND;
   }
   // If the order could not be loaded or if the payment redirect key doesn't
@@ -217,22 +217,6 @@ function commerce_klarna_checkout_v3_process_confirmation($order, $payment_redir
 
   if (empty($klarna_order['html_snippet']) || $klarna_order->getId() != $_GET['klarna_order_id']) {
     return MENU_NOT_FOUND;
-  }
-
-  while (commerce_cart_order_is_cart($order)) {
-    $transaction = db_transaction();
-    try {
-      if (module_exists('commerce_checkout')) {
-        commerce_order_status_update($order, 'checkout_payment', FALSE, TRUE, t('Order status updated by the Klarna checkout v3 module.'));
-      }
-      else {
-        commerce_order_status_update($order, 'pending', FALSE, TRUE, t('Order status updated by the Klarna checkout v3 module.'));
-      }
-    }
-    catch (\OptimisticLockException $exception) {
-      $transaction->rollback();
-      $order = commerce_order_load($order->order_id);
-    }
   }
 
   return [
@@ -425,9 +409,6 @@ function commerce_klarna_checkout_v3_validate_order($order) {
       WATCHDOG_DEBUG
     );
   }
-
-  // Give modules a chance to validate the order.
-  module_invoke_all('commerce_klarna_checkout_v3_validate_order', $order, $klarna_order);
   $klarna_total = [
     'currency_code' => strtoupper($klarna_order['purchase_currency']),
     'amount' => (int) $klarna_order['order_amount'],
@@ -446,6 +427,31 @@ function commerce_klarna_checkout_v3_validate_order($order) {
       ]
     );
     drupal_goto('checkout/' . $order->order_id, [], 303);
+  }
+
+  // Give modules a chance to validate the order.
+  module_invoke_all('commerce_klarna_checkout_v3_validate_order', $order, $klarna_order);
+
+  // Make sure the order is no longer considered as a cart, if the validation
+  // passed.
+  if (module_exists('commerce_checkout')) {
+    while (!isset($order->data['commerce_klarna_checkout_v3_order_validated'])) {
+      try {
+        $order->data['commerce_klarna_checkout_v3_order_validated'] = TRUE;
+        $order->log = t('Waiting payment confirmation from Klarna.');
+        commerce_order_status_update($order, 'checkout_payment');
+      }
+      // @todo: Find a way to make this exception handling generic.
+      catch (\OptimisticLockException $e) {
+        $order = commerce_order_load($order->order_id);
+      }
+      catch (\Exception $exception) {
+        // In case of a generic exception, there's no indication that the next
+        // attempt will succeed, so make sure to break the while loop.
+        $order->data['commerce_klarna_checkout_v3_order_validated'] = TRUE;
+        watchdog_exception('matsmart_klarna', $exception);
+      }
+    }
   }
 
   return MENU_FOUND;
