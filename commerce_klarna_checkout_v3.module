@@ -241,7 +241,7 @@ function commerce_klarna_checkout_v3_submit_form($payment_method, $pane_values, 
   }
   $form = [];
   module_load_include('inc', 'commerce_klarna_checkout_v3');
-  $klarna_order = commerce_klarna_checkout_v3_init($payment_method, $order);
+  $klarna_order = commerce_klarna_checkout_v3_init($order, $payment_method);
 
   if ($klarna_order && !empty($klarna_order['html_snippet'])) {
     $form['klarna_snippet'] = [

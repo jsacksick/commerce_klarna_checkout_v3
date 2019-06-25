@@ -12,15 +12,15 @@ use Klarna\Rest\OrderManagement\Order as KlarnaOrderManagement;
 /**
  * Helper function that initiates the Klarna Checkout object.
  *
- * @param array $payment_method
- *   The payment method instance.
  * @param object $order
  *   The order object
+ * @param array $payment_method
+ *   The payment method instance.
  *
  * @return mixed
  *   A Klarna Order object, FALSE in case of error.
  */
-function commerce_klarna_checkout_v3_init($payment_method, $order) {
+function commerce_klarna_checkout_v3_init($order, $payment_method) {
   $settings = $payment_method['settings'] + commerce_klarna_checkout_v3_default_settings();
   $settings['options']['allowed_customer_types'] = array_values($settings['options']['allowed_customer_types']);
   // Check which of the Tax module is enabled.
