@@ -150,13 +150,17 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
   $form['purchase_country'] = [
     '#type' => 'select',
     '#options' => [
-      'US' => t('United States'),
-      'NL' => t('Netherlands'),
-      'GB' => t('United Kingdom'),
+      'AT' => t('Austria'),
       'DK' => t('Denmark'),
+      'DE' => t('Germany'),
+      'FI' => t('Finland'),
+      'NL' => t('Netherlands'),
+      'NO' => t('Norway'),
+      'SE' => t('Sweden'),
+      'GB' => t('United Kingdom'),
+      'US' => t('United States'),
     ],
     '#title' => t('Purchase country'),
-    '#description' => t('ISO 4217 purchase currency.'),
     '#default_value' => $settings['purchase_country'],
     '#required' => TRUE,
   ];
@@ -164,10 +168,11 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
   $form['locale'] = [
     '#type' => 'select',
     '#options' => [
-      'en-US' => t('English (United States)'),
-      'en-GB' => t('English (United Kingdom)'),
-      'nl-NL' => t('Dutch (Netherlands)'),
-      'da-DK' => t('Danish (Denmark)'),
+      'en-us' => t('English (United States)'),
+      'en-gb' => t('English (United Kingdom)'),
+      'nl-nl' => t('Dutch (Netherlands)'),
+      'da-dk' => t('Danish (Denmark)'),
+      'sv-se' => t('Swedish (Sweden)'),
     ],
     '#title' => t('Locale'),
     '#description' => t("RFC 1766 customer's locale."),
@@ -185,9 +190,9 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
   if (module_exists('commerce_customer')) {
     // Address field settings.
     $form['customer_profile'] = [
-      '#type'           => 'fieldset',
-      '#title'          => t('Customer profile settings'),
-      '#collapsible'    => FALSE,
+      '#type' => 'fieldset',
+      '#title' => t('Customer profile settings'),
+      '#collapsible' => FALSE,
     ];
     $form['customer_profile']['create_billing_profile'] = [
       '#type' => 'checkbox',
