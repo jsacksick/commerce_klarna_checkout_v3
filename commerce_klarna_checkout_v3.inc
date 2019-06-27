@@ -75,13 +75,13 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
 
   // First, check using the commerce_tax module.
   if ($commerce_tax_enabled) {
-    $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_tax_total_amount($order_total['data']['components'], FALSE, $order_total['currency_code']));
+    $tax_amount = commerce_tax_total_amount($order_total['data']['components'], FALSE, $order_total['currency_code']);
     $order_data['order_tax_amount'] = (int) $tax_amount;
   }
 
   // Retrieve the VAT using the commerce_vat module.
   if ($commerce_vat_enabled && $order_data['order_tax_amount'] <= 0) {
-    $vat_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_vat_total_amount($order_total['data']['components'], TRUE, $order_total['currency_code']));
+    $vat_amount = commerce_vat_total_amount($order_total['data']['components'], TRUE, $order_total['currency_code']);
     $order_data['order_tax_amount'] = (int) $vat_amount;
   }
 
@@ -139,7 +139,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $tax_rate = count($tax) ? (int) ($tax[0]['price']['data']['tax_rate']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $tax_rate;
 
-      $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']));
+      $tax_amount = commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']);
       $order_line['total_tax_amount'] = (int) $tax_amount;
     }
 
@@ -149,7 +149,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $vat = commerce_vat_components($unit_price['data']['components']);
       $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $vat_rate;
-      $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']));
+      $tax_amount = commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']);
       $order_line['total_tax_amount'] = (int) $tax_amount;
     }
 
