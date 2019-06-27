@@ -22,7 +22,7 @@ use Klarna\Rest\Transport\GuzzleConnector;
  */
 function commerce_klarna_checkout_v3_init($order, $payment_method) {
   $settings = $payment_method['settings'] + commerce_klarna_checkout_v3_default_settings();
-  $settings['options']['allowed_customer_types'] = array_values($settings['options']['allowed_customer_types']);
+  $settings['options']['allowed_customer_types'] = array_values(array_filter($settings['options']['allowed_customer_types']));
   // Check which of the Tax module is enabled.
   $commerce_tax_enabled = module_exists('commerce_tax');
   $commerce_vat_enabled = module_exists('commerce_vat');
@@ -37,6 +37,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     'query' => [
       'klarna_order_id' => '{checkout.order.id}',
     ],
+    'https' => TRUE,
   ];
   // Retrieve the payment rule configuration name.
   // We can't pass the full payment method instance ID to klarna for some
@@ -44,7 +45,15 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
   // the order data, but having it passed loaded to the menu callbacks is
   // convenient.
   list(, $rule_name) = explode('|', $payment_method['instance_id']);
+  // We need to force url() to generate secure urls.
+  $https = variable_get('https', FALSE);
+  global $conf;
+  if (!$https) {
+    $conf['https'] = TRUE;
+  }
   $order_data = [
+    'merchant_reference1' => $order->order_id,
+    'merchant_reference2' => $order->order_number,
     'merchant_urls' => [
       'checkout' => url('checkout/' . $order->order_id . '/payment', $url_options),
       // We cannot use the regular payment/return callback because this works
@@ -54,7 +63,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       'validation' => url('commerce_klarna_checkout_v3/validate/' . $order->order_id, $url_options),
       'terms' => $settings['terms_path'],
     ],
-    'order_amount' => $order_total['amount'],
+    'order_amount' => (int) $order_total['amount'],
     'purchase_currency' => $order_total['currency_code'],
     'purchase_country' => $settings['purchase_country'],
     'order_lines' => [],
@@ -62,24 +71,25 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     'locale' => $settings['locale'],
     'options' => $settings['options'],
   ];
+  $conf['https'] = $https;
 
   // First, check using the commerce_tax module.
   if ($commerce_tax_enabled) {
     $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_tax_total_amount($order_total['data']['components'], FALSE, $order_total['currency_code']));
-    $order_data['order_tax_amount'] = $tax_amount;
+    $order_data['order_tax_amount'] = (int) $tax_amount;
   }
 
   // Retrieve the VAT using the commerce_vat module.
   if ($commerce_vat_enabled && $order_data['order_tax_amount'] <= 0) {
     $vat_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_vat_total_amount($order_total['data']['components'], TRUE, $order_total['currency_code']));
-    $order_data['order_tax_amount'] = $vat_amount;
+    $order_data['order_tax_amount'] = (int) $vat_amount;
   }
 
   // Map the Drupal line item type to the Klarna type.
   $types_mapping = [
     'shipping' => 'shipping_fee',
     'giftcard_use' => 'gift_card',
-    'product_discount' => 'discount',
+    'commerce_discount' => 'discount',
   ];
 
   // Assume physical for all the product line item types.
@@ -99,8 +109,8 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     $order_line = [
       'quantity' => (int) $line_item->quantity,
       'name' => commerce_line_item_title($line_item),
-      'unit_price' => $unit_price['amount'],
-      'total_amount' => $line_item_total['amount'],
+      'unit_price' => (int) $unit_price['amount'],
+      'total_amount' => (int) $line_item_total['amount'],
       'tax_rate' => 0,
       'total_discount_amount' => 0,
       'total_tax_amount' => 0,
@@ -111,13 +121,15 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $order_line['reference'] = $line_item_wrapper->commerce_product->sku->value();
     }
 
-    // Calculate the total discount.
-    foreach ($line_item_total['data']['components'] as $key => $component) {
-      if (strpos($component['name'], 'discount') !== 0) {
-        continue;
+    if ($order_line['total_amount'] > 0) {
+      // Calculate the total discount.
+      foreach ($line_item_total['data']['components'] as $key => $component) {
+        if (strpos($component['name'], 'discount') !== 0) {
+          continue;
+        }
+        // The discount amount needs to be passed as a positive amount.
+        $order_line['total_discount_amount'] += -$component['price']['amount'];
       }
-      // The discount amount needs to be passed as a positive amount.
-      $order_line['total_discount_amount'] += -$component['price']['amount'];
     }
 
     // Calculate the tax.
@@ -128,7 +140,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $order_line['tax_rate'] = $tax_rate;
 
       $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']));
-      $order_line['total_tax_amount'] = $tax_amount;
+      $order_line['total_tax_amount'] = (int) $tax_amount;
     }
 
     // Check the taxes with the VAT module if no tax has been found before.
@@ -138,7 +150,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $vat_rate;
       $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']));
-      $order_line['total_tax_amount'] = $tax_amount;
+      $order_line['total_tax_amount'] = (int) $tax_amount;
     }
 
     // Add the type.
