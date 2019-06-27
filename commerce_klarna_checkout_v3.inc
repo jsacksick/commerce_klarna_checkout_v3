@@ -1,8 +1,8 @@
 <?php
 
-use Klarna\Rest\Transport\Connector;
 use Klarna\Rest\Checkout\Order as KlarnaOrder;
 use Klarna\Rest\OrderManagement\Order as KlarnaOrderManagement;
+use Klarna\Rest\Transport\GuzzleConnector;
 
 /**
  * @file
@@ -43,7 +43,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
   // reasons (it's causing errors), we could reuse the payment method from
   // the order data, but having it passed loaded to the menu callbacks is
   // convenient.
-  list($method_id, $rule_name) = explode('|', $payment_method['instance_id']);
+  list(, $rule_name) = explode('|', $payment_method['instance_id']);
   $order_data = [
     'merchant_urls' => [
       'checkout' => url('checkout/' . $order->order_id . '/payment', $url_options),
@@ -124,8 +124,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     // If the tax module is enabled, try to get the tax rate.
     if ($commerce_tax_enabled) {
       $tax = commerce_tax_components($unit_price['data']['components']);
-      $tax_rate
-        = count($tax) ? $tax[0]['price']['data']['tax_rate']['rate'] * 10000 : 0;
+      $tax_rate = count($tax) ? (int) ($tax[0]['price']['data']['tax_rate']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $tax_rate;
 
       $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']));
@@ -136,7 +135,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     if ($commerce_vat_enabled && $order_line['tax_rate'] <= 0) {
       // Get the VAT rate.
       $vat = commerce_vat_components($unit_price['data']['components']);
-      $vat_rate = count($vat) ? $vat[0]['price']['data']['vat_rate_info']['rate'] * 10000 : 0;
+      $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $vat_rate;
       $tax_amount = commerce_round(COMMERCE_ROUND_HALF_UP, commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']));
       $order_line['total_tax_amount'] = $tax_amount;
@@ -154,9 +153,9 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
   $hashed_data = md5(json_encode($order_data));
 
   try {
-    $connector = Connector::create(
-      $settings['merchant_id'],
-      $settings['secret'],
+    $connector = GuzzleConnector::create(
+      $settings['username'],
+      $settings['password'],
       commerce_klarna_checkout_v3_server_url($settings)
     );
     $klarna_mapping = commerce_klarna_checkout_v3_get_mapping($order->order_id);
@@ -202,7 +201,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
  *   The payment method instance array that originally made the payment.
  */
 function commerce_klarna_checkout_v3_process_confirmation($order, $payment_redirect_key, $payment_method) {
-  if (empty($payment_method['settings']['merchant_id']) || empty($payment_method['settings']['secret'])) {
+  if (empty($payment_method['settings']['username']) || empty($payment_method['settings']['password'])) {
     watchdog('commerce_klarna_checkout_v3', 'Cannot show the payment confirmation snippet for the order @order_id because the payment method is not correctly configured.', ['@order_id' => $order->order_id], WATCHDOG_ERROR);
     return MENU_NOT_FOUND;
   }
@@ -240,7 +239,7 @@ function commerce_klarna_checkout_v3_process_confirmation($order, $payment_redir
  *   The payment method instance array that originally made the payment.
  */
 function commerce_klarna_checkout_v3_process_push($order, $payment_redirect_key, $payment_method) {
-  if (empty($payment_method['settings']['merchant_id']) || empty($payment_method['settings']['secret'])) {
+  if (empty($payment_method['settings']['username']) || empty($payment_method['settings']['password'])) {
     watchdog('commerce_klarna_checkout_v3', 'The payment for the order @order_id could not be processed because the payment method is not correctly configured.', ['@order_id' => $order->order_id], WATCHDOG_ERROR);
     return MENU_NOT_FOUND;
   }
@@ -252,9 +251,9 @@ function commerce_klarna_checkout_v3_process_push($order, $payment_redirect_key,
   $klarna_order_id = $_GET['klarna_order_id'];
 
   try {
-    $connector = Connector::create(
-      $payment_method['settings']['merchant_id'],
-      $payment_method['settings']['secret'],
+    $connector = GuzzleConnector::create(
+      $payment_method['settings']['username'],
+      $payment_method['settings']['password'],
       commerce_klarna_checkout_v3_server_url($payment_method['settings'])
     );
     $klarna_order = new KlarnaOrderManagement($connector, $klarna_order_id);

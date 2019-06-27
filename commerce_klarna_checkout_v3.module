@@ -6,8 +6,8 @@
  */
 
 use Klarna\Rest\Checkout\Order as KlarnaOrder;
-use Klarna\Rest\Transport\Connector;
 use Klarna\Rest\Transport\ConnectorInterface;
+use Klarna\Rest\Transport\GuzzleConnector;
 
 /**
  * Implements hook_menu().
@@ -95,8 +95,8 @@ function commerce_klarna_checkout_v3_commerce_payment_method_info() {
 function commerce_klarna_checkout_v3_default_settings() {
   return [
     'server' => 'test',
-    'merchant_id' => '',
-    'secret' => '',
+    'username' => '',
+    'password' => '',
     'purchase_country' => 'US',
     'locale' => 'en-US',
     'terms_path' => '',
@@ -122,11 +122,17 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
   // Merge default settings into the stored settings array.
   $settings = (array) $settings + commerce_klarna_checkout_v3_default_settings();
 
-  $form['merchant_id'] = [
+  $form['username'] = [
     '#type' => 'textfield',
-    '#title' => t('Merchant ID'),
-    '#description' => t('The unique number that identifies your e-store.'),
-    '#default_value' => $settings['merchant_id'],
+    '#title' => t('Username'),
+    '#default_value' => $settings['username'],
+    '#required' => TRUE,
+  ];
+
+  $form['password'] = [
+    '#type' => 'textfield',
+    '#title' => t('Password'),
+    '#default_value' => $settings['password'],
     '#required' => TRUE,
   ];
 
@@ -138,13 +144,6 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
       'live' => ('Live - use for processing real transactions'),
     ],
     '#default_value' => $settings['server'],
-  ];
-
-  $form['secret'] = [
-    '#type' => 'textfield',
-    '#title' => t('Shared secret'),
-    '#default_value' => $settings['secret'],
-    '#required' => TRUE,
   ];
 
   $form['purchase_country'] = [
@@ -241,7 +240,7 @@ function commerce_klarna_checkout_v3_settings_form($settings = NULL) {
  * Payment method callback: submit form.
  */
 function commerce_klarna_checkout_v3_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
-  if (empty($payment_method['settings']['merchant_id']) || empty($payment_method['settings']['secret'])) {
+  if (empty($payment_method['settings']['username']) || empty($payment_method['settings']['password'])) {
     return [];
   }
   $form = [];
@@ -357,9 +356,9 @@ function commerce_klarna_checkout_v3_get_order($order, $payment_method = NULL) {
     return NULL;
   }
   try {
-    $connector = Connector::create(
-      $payment_method['settings']['merchant_id'],
-      $payment_method['settings']['secret'],
+    $connector = GuzzleConnector::create(
+      $payment_method['settings']['username'],
+      $payment_method['settings']['password'],
       commerce_klarna_checkout_v3_server_url($payment_method['settings'])
     );
     $klarna_order = new KlarnaOrder($connector, $klarna_mapping['klarna_order_id']);
