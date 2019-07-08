@@ -161,38 +161,34 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     $order_data['order_lines'][] = $order_line;
   }
   drupal_alter('commerce_klarna_checkout_v3_init', $order_data, $order);
-  // Hash the order data for easier comparison.
-  $hashed_data = md5(json_encode($order_data));
 
+  $connector = GuzzleConnector::create(
+    $settings['username'],
+    $settings['password'],
+    commerce_klarna_checkout_v3_server_url($settings)
+  );
+  $klarna_order_id = commerce_klarna_checkout_v3_get_mapping($order->order_id);
+
+  // If the order was already created in Klarna, attempt to update it and fetch
+  // it.
+  if ($klarna_order_id) {
+    try {
+      $klarna_order = new KlarnaOrder($connector, $klarna_order_id);
+      $klarna_order = $klarna_order->update($order_data);
+      return $klarna_order;
+    }
+    catch (Exception $e) {
+      watchdog_exception('commerce_klarna_checkout_v3', $e);
+    }
+  }
+
+  // Otherwise, create a new order.
   try {
-    $connector = GuzzleConnector::create(
-      $settings['username'],
-      $settings['password'],
-      commerce_klarna_checkout_v3_server_url($settings)
-    );
-    $klarna_mapping = commerce_klarna_checkout_v3_get_mapping($order->order_id);
-
-    // If the order was already created in Klarna, fetch it.
-    if (isset($klarna_mapping['klarna_order_id'])) {
-      $klarna_order = new KlarnaOrder($connector, $klarna_mapping['klarna_order_id']);
-
-      if ($klarna_mapping['hash'] != $hashed_data) {
-        $klarna_order->update($order_data);
-        $klarna_mapping['hash'] = $hashed_data;
-      }
-    }
-    else {
-      // Otherwise, create a new order.
-      $klarna_order = new KlarnaOrder($connector);
-      $klarna_order->create($order_data);
-      // Store the Klarna order ID in our custom table so that it can be
-      // retrieved later.
-      $klarna_mapping['klarna_order_id'] = $klarna_order->getId();
-      $klarna_mapping['order_id'] = $order->order_id;
-      $klarna_mapping['hash'] = $hashed_data;
-    }
-    commerce_klarna_checkout_v3_store_mapping($klarna_mapping);
-    $klarna_order->fetch();
+    $klarna_order = new KlarnaOrder($connector);
+    $klarna_order = $klarna_order->create($order_data);
+    // Store the Klarna order ID in our mapping table so that it can be
+    // retrieved later.
+    commerce_klarna_checkout_v3_store_mapping($order->order_id, $klarna_order->getId());
     return $klarna_order;
   }
   catch (Exception $e) {

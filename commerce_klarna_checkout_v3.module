@@ -313,28 +313,26 @@ function commerce_klarna_checkout_v3_transaction_save($payment_method, $order, $
  * @param $order_id
  *   The order_id.
  *
- * @return array
- *   An associative array containing the matching Klarna order ID for the given
- *   order as well as a hash representing the last data sent to Klarna.
+ * @return string
+ *   The Klarna order ID for the given order ID if it exists, FALSE otherwise.
  */
 function commerce_klarna_checkout_v3_get_mapping($order_id) {
-  return db_select('commerce_klarna_checkout', 'kc')
-    ->fields('kc')
-    ->condition('order_id', $order_id)
-    ->execute()
-    ->fetchAssoc();
+  return db_query('SELECT klarna_order_id FROM {commerce_klarna_checkout_v3_mapping} WHERE order_id = :order_id', [':order_id' => $order_id])->fetchField();
 }
 
 /**
- * Store the Klarna order ID, as well as a hash representing the order data
- * sent for later retrieval.
+ * Store the Klarna order ID for the given order.
  *
- * @param $klarna_mapping
- *   An associative array containing the matching Klarna order ID for the given
- *   order as well as a hash representing the last data sent to Klarna.
+ * @param $order_id
+ *   The order ID.
+ * @param $klarna_order_id
+ *   The Klarna order ID.
  */
-function commerce_klarna_checkout_v3_store_mapping($klarna_mapping) {
-  db_merge('commerce_klarna_checkout')->key(['order_id' => $klarna_mapping['order_id']])->fields($klarna_mapping)->execute();
+function commerce_klarna_checkout_v3_store_mapping($order_id, $klarna_order_id) {
+  db_merge('commerce_klarna_checkout_v3_mapping')->key(['order_id' => $order_id])->fields([
+    'order_id' => $order_id,
+    'klarna_order_id' => $klarna_order_id,
+  ])->execute();
 }
 
 /**
@@ -349,10 +347,10 @@ function commerce_klarna_checkout_v3_get_order($order, $payment_method = NULL) {
     return NULL;
   }
   // Get the Klarna order_id in order to fetch the order from Klarna.
-  $klarna_mapping = commerce_klarna_checkout_v3_get_mapping($order->order_id);
+  $klarna_order_id = commerce_klarna_checkout_v3_get_mapping($order->order_id);
 
   // IF the Klarna order_id isn't known, stop here.
-  if (!isset($klarna_mapping['klarna_order_id'])) {
+  if (!$klarna_order_id) {
     return NULL;
   }
   try {
@@ -361,7 +359,7 @@ function commerce_klarna_checkout_v3_get_order($order, $payment_method = NULL) {
       $payment_method['settings']['password'],
       commerce_klarna_checkout_v3_server_url($payment_method['settings'])
     );
-    $klarna_order = new KlarnaOrder($connector, $klarna_mapping['klarna_order_id']);
+    $klarna_order = new KlarnaOrder($connector, $klarna_order_id);
     $klarna_order->fetch();
     return $klarna_order;
   }
@@ -375,7 +373,7 @@ function commerce_klarna_checkout_v3_get_order($order, $payment_method = NULL) {
  * Implements hook_commerce_order_delete().
  */
 function commerce_klarna_checkout_v3_commerce_order_delete($order) {
-  db_delete('commerce_klarna_checkout')
+  db_delete('commerce_klarna_checkout_v3_mapping')
     ->condition('order_id', $order->order_id)
     ->execute();
 }

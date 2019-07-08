@@ -8,7 +8,7 @@
  * Implements hook_schema().
  */
 function commerce_klarna_checkout_v3_schema() {
-  $schema['commerce_klarna_checkout'] = [
+  $schema['commerce_klarna_checkout_v3_mapping'] = [
     'description' => 'Stores the matching Klarna order ID for orders.',
     'fields' => [
       'order_id' => [
@@ -21,13 +21,6 @@ function commerce_klarna_checkout_v3_schema() {
         'description' => 'The Klarna order_id (used to fetch the order from Klarna).',
         'type' => 'varchar',
         'length' => 64,
-        'not null' => TRUE,
-        'default' => '',
-      ],
-      'hash' => [
-        'description' => 'A hash representing the last order data sent to Klarna to track changes.',
-        'type' => 'varchar',
-        'length' => 32,
         'not null' => TRUE,
         'default' => '',
       ],
