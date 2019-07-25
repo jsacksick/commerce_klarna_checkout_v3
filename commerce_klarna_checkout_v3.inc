@@ -127,10 +127,11 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
         continue;
       }
       // The discount amount needs to be passed as a positive amount.
-      $order_line['unit_price'] += (int) $component['price']['amount'];
+      $order_line['unit_price'] += $component['price']['amount'];
     }
+    $order_line['unit_price'] = (int) $order_line['unit_price'];
 
-    if ($order_line['total_amount'] > 0) {
+    if ($order_line['unit_price'] > 0) {
       // Calculate the total discount.
       foreach ($line_item_total['data']['components'] as $key => $component) {
         if (strpos($component['name'], 'discount') !== 0) {
@@ -139,6 +140,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
         // The discount amount needs to be passed as a positive amount.
         $order_line['total_discount_amount'] += -$component['price']['amount'];
       }
+      $order_line['total_discount_amount'] = (int) $order_line['total_discount_amount'];
     }
 
     // Calculate the tax.
