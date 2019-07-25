@@ -109,7 +109,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     $order_line = [
       'quantity' => (int) $line_item->quantity,
       'name' => commerce_line_item_title($line_item),
-      'unit_price' => (int) $unit_price['amount'],
+      'unit_price' => 0,
       'total_amount' => (int) $line_item_total['amount'],
       'tax_rate' => 0,
       'total_discount_amount' => 0,
@@ -119,6 +119,15 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     // For product line item types.
     if (in_array($line_item_wrapper->getBundle(), $product_line_item_types)) {
       $order_line['reference'] = $line_item_wrapper->commerce_product->sku->value();
+    }
+
+    // Calculate the unit price without discounts.
+    foreach ($unit_price['data']['components'] as $key => $component) {
+      if (strpos($component['name'], 'discount') === 0) {
+        continue;
+      }
+      // The discount amount needs to be passed as a positive amount.
+      $order_line['unit_price'] += (int) $component['price']['amount'];
     }
 
     if ($order_line['total_amount'] > 0) {
