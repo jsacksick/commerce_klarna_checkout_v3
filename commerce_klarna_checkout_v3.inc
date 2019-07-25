@@ -444,33 +444,18 @@ function commerce_klarna_checkout_v3_validate_order($order) {
         '@order_total' => $order_total[0]['amount'],
       ]
     );
-    drupal_goto('checkout/' . $order->order_id, [], 303);
+    if (!empty($order->data['source_url'])) {
+      drupal_goto($order->data['source_url'] . '/checkout', ['external' => TRUE], 303);
+    }
+    else {
+      // We don't know where the order was created from, redirect to the Drupal
+      // frontend.
+      drupal_goto("checkout/$order->order_id", [], 303);
+    }
   }
 
   // Give modules a chance to validate the order.
   module_invoke_all('commerce_klarna_checkout_v3_validate_order', $order, $klarna_order);
-
-  // Make sure the order is no longer considered as a cart, if the validation
-  // passed.
-  if (module_exists('commerce_checkout')) {
-    while (!isset($order->data['commerce_klarna_checkout_v3_order_validated'])) {
-      try {
-        $order->data['commerce_klarna_checkout_v3_order_validated'] = TRUE;
-        $order->log = t('Waiting payment confirmation from Klarna.');
-        commerce_order_status_update($order, 'checkout_payment');
-      }
-      // @todo: Find a way to make this exception handling generic.
-      catch (\OptimisticLockException $e) {
-        $order = commerce_order_load($order->order_id);
-      }
-      catch (\Exception $exception) {
-        // In case of a generic exception, there's no indication that the next
-        // attempt will succeed, so make sure to break the while loop.
-        $order->data['commerce_klarna_checkout_v3_order_validated'] = TRUE;
-        watchdog_exception('matsmart_klarna', $exception);
-      }
-    }
-  }
 
   return MENU_FOUND;
 }
