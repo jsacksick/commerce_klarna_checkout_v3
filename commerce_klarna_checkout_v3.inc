@@ -28,7 +28,6 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
   $commerce_vat_enabled = module_exists('commerce_vat');
 
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
-  $product_line_item_types = commerce_product_line_item_types();
   // We could use the order balance but then we wouldn't know how to calculate
   // the total tax for this amount, so use the order total here.
   $order_total = $order_wrapper->commerce_order_total->value();
@@ -66,7 +65,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     'order_amount' => (int) $order_total['amount'],
     'purchase_currency' => $order_total['currency_code'],
     'purchase_country' => $settings['purchase_country'],
-    'order_lines' => [],
+    'order_lines' => _commerce_klarna_checkout_v3_build_order_lines($order_wrapper->commerce_line_items->value()),
     'order_tax_amount' => 0,
     'locale' => $settings['locale'],
     'options' => $settings['options'],
@@ -85,92 +84,6 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
     $order_data['order_tax_amount'] = (int) $vat_amount;
   }
 
-  // Map the Drupal line item type to the Klarna type.
-  $types_mapping = [
-    'shipping' => 'shipping_fee',
-    'giftcard_use' => 'gift_card',
-    'commerce_discount' => 'discount',
-  ];
-
-  // Assume physical for all the product line item types.
-  foreach ($product_line_item_types as $line_item_type) {
-    $types_mapping[$line_item_type] = 'physical';
-  }
-
-  // Loop over the line items.
-  foreach ($order_wrapper->commerce_line_items as $line_item_wrapper) {
-    if (!$line_item_wrapper->value()) {
-      continue;
-    }
-    $line_item = $line_item_wrapper->value();
-    $unit_price = $line_item_wrapper->commerce_unit_price->value();
-    $line_item_total = $line_item_wrapper->commerce_total->value();
-
-    $order_line = [
-      'quantity' => (int) $line_item->quantity,
-      'name' => commerce_line_item_title($line_item),
-      'unit_price' => 0,
-      'total_amount' => (int) $line_item_total['amount'],
-      'tax_rate' => 0,
-      'total_discount_amount' => 0,
-      'total_tax_amount' => 0,
-    ];
-
-    // For product line item types.
-    if (in_array($line_item_wrapper->getBundle(), $product_line_item_types)) {
-      $order_line['reference'] = $line_item_wrapper->commerce_product->sku->value();
-    }
-
-    // Calculate the unit price excluding discounts.
-    foreach ($unit_price['data']['components'] as $key => $component) {
-      if (strpos($component['name'], 'discount') === 0) {
-        continue;
-      }
-      // The discount amount needs to be passed as a positive amount.
-      $order_line['unit_price'] += $component['price']['amount'];
-    }
-    $order_line['unit_price'] = (int) $order_line['unit_price'];
-
-    if ($order_line['unit_price'] > 0) {
-      // Calculate the total discount.
-      foreach ($line_item_total['data']['components'] as $key => $component) {
-        if (strpos($component['name'], 'discount') !== 0) {
-          continue;
-        }
-        // The discount amount needs to be passed as a positive amount.
-        $order_line['total_discount_amount'] += -$component['price']['amount'];
-      }
-      $order_line['total_discount_amount'] = (int) $order_line['total_discount_amount'];
-    }
-
-    // Calculate the tax.
-    // If the tax module is enabled, try to get the tax rate.
-    if ($commerce_tax_enabled) {
-      $tax = commerce_tax_components($unit_price['data']['components']);
-      $tax_rate = count($tax) ? (int) ($tax[0]['price']['data']['tax_rate']['rate'] * 10000) : 0;
-      $order_line['tax_rate'] = $tax_rate;
-
-      $tax_amount = commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']);
-      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
-    }
-
-    // Check the taxes with the VAT module if no tax has been found before.
-    if ($commerce_vat_enabled && $order_line['tax_rate'] <= 0) {
-      // Get the VAT rate.
-      $vat = commerce_vat_components($unit_price['data']['components']);
-      $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
-      $order_line['tax_rate'] = $vat_rate;
-      $tax_amount = commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']);
-      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
-    }
-
-    // Add the type.
-    if (isset($types_mapping[$line_item_wrapper->getBundle()])) {
-      $order_line['type'] = $types_mapping[$line_item_wrapper->getBundle()];
-    }
-
-    $order_data['order_lines'][] = $order_line;
-  }
   drupal_alter('commerce_klarna_checkout_v3_init', $order_data, $order);
 
   $connector = GuzzleConnector::create(
@@ -458,4 +371,105 @@ function commerce_klarna_checkout_v3_validate_order($order) {
   module_invoke_all('commerce_klarna_checkout_v3_validate_order', $order, $klarna_order);
 
   return MENU_FOUND;
+}
+
+/**
+ * Helper function: Build the order lines for the given line items.
+ *
+ * @param $line_items
+ *   An array of line items.
+ *
+ * @return array
+ *   An array of order lines in a format expected by Klarna.
+ */
+function _commerce_klarna_checkout_v3_build_order_lines($line_items) {
+  $order_lines = [];
+  // Check which of the Tax module is enabled.
+  $commerce_tax_enabled = module_exists('commerce_tax');
+  $commerce_vat_enabled = module_exists('commerce_vat');
+  $product_line_item_types = commerce_product_line_item_types();
+
+  // Map the Drupal line item type to the Klarna type.
+  $types_mapping = [
+    'shipping' => 'shipping_fee',
+    'giftcard_use' => 'gift_card',
+    'commerce_discount' => 'discount',
+  ];
+
+  // Assume physical for all the product line item types.
+  foreach ($product_line_item_types as $line_item_type) {
+    $types_mapping[$line_item_type] = 'physical';
+  }
+
+  foreach ($line_items as $line_item) {
+    $line_item_wrapper = entity_metadata_wrapper('commerce_line_item', $line_item);
+    $unit_price = $line_item_wrapper->commerce_unit_price->value();
+    $line_item_total = $line_item_wrapper->commerce_total->value();
+
+    $order_line = [
+      'quantity' => (int) $line_item->quantity,
+      'name' => commerce_line_item_title($line_item),
+      'unit_price' => 0,
+      'total_amount' => (int) $line_item_total['amount'],
+      'tax_rate' => 0,
+      'total_discount_amount' => 0,
+      'total_tax_amount' => 0,
+    ];
+
+    // For product line item types.
+    if (in_array($line_item->type, $product_line_item_types)) {
+      $order_line['reference'] = $line_item_wrapper->commerce_product->sku->value();
+    }
+
+    // Calculate the unit price excluding discounts.
+    foreach ($unit_price['data']['components'] as $key => $component) {
+      if (strpos($component['name'], 'discount') === 0) {
+        continue;
+      }
+      // The discount amount needs to be passed as a positive amount.
+      $order_line['unit_price'] += $component['price']['amount'];
+    }
+    $order_line['unit_price'] = (int) $order_line['unit_price'];
+
+    if ($order_line['unit_price'] > 0) {
+      // Calculate the total discount.
+      foreach ($line_item_total['data']['components'] as $key => $component) {
+        if (strpos($component['name'], 'discount') !== 0) {
+          continue;
+        }
+        // The discount amount needs to be passed as a positive amount.
+        $order_line['total_discount_amount'] += -$component['price']['amount'];
+      }
+      $order_line['total_discount_amount'] = (int) $order_line['total_discount_amount'];
+    }
+
+    // Calculate the tax.
+    // If the tax module is enabled, try to get the tax rate.
+    if ($commerce_tax_enabled) {
+      $tax = commerce_tax_components($unit_price['data']['components']);
+      $tax_rate = count($tax) ? (int) ($tax[0]['price']['data']['tax_rate']['rate'] * 10000) : 0;
+      $order_line['tax_rate'] = $tax_rate;
+
+      $tax_amount = commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $line_item_total['currency_code']);
+      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
+    }
+
+    // Check the taxes with the VAT module if no tax has been found before.
+    if ($commerce_vat_enabled && $order_line['tax_rate'] <= 0) {
+      // Get the VAT rate.
+      $vat = commerce_vat_components($unit_price['data']['components']);
+      $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
+      $order_line['tax_rate'] = $vat_rate;
+      $tax_amount = commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $line_item_total['currency_code']);
+      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
+    }
+
+    if (isset($types_mapping[$line_item->type])) {
+      $order_line['type'] = $types_mapping[$line_item->type];
+    }
+
+    $order_lines[] = $order_line;
+  }
+
+  return $order_lines;
 }
