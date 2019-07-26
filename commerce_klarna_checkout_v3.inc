@@ -121,7 +121,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $order_line['reference'] = $line_item_wrapper->commerce_product->sku->value();
     }
 
-    // Calculate the unit price without discounts.
+    // Calculate the unit price excluding discounts.
     foreach ($unit_price['data']['components'] as $key => $component) {
       if (strpos($component['name'], 'discount') === 0) {
         continue;
@@ -151,7 +151,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $order_line['tax_rate'] = $tax_rate;
 
       $tax_amount = commerce_tax_total_amount($line_item_total['data']['components'], FALSE, $order_total['currency_code']);
-      $order_line['total_tax_amount'] = (int) $tax_amount;
+      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
     }
 
     // Check the taxes with the VAT module if no tax has been found before.
@@ -161,7 +161,7 @@ function commerce_klarna_checkout_v3_init($order, $payment_method) {
       $vat_rate = count($vat) ? (int) ($vat[0]['price']['data']['vat_rate_info']['rate'] * 10000) : 0;
       $order_line['tax_rate'] = $vat_rate;
       $tax_amount = commerce_vat_total_amount($line_item_total['data']['components'], TRUE, $order_total['currency_code']);
-      $order_line['total_tax_amount'] = (int) $tax_amount;
+      $order_line['total_tax_amount'] = (int) commerce_round(COMMERCE_ROUND_HALF_UP, $tax_amount);
     }
 
     // Add the type.
