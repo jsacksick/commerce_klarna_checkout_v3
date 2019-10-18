@@ -12,7 +12,7 @@ function commerce_klarna_checkout_v3_confirm_pane_checkout_form($form, &$form_st
   if ($payment_method['method_id'] != 'klarna_checkout_v3') {
     return [];
   }
-  $klarna_order = commerce_klarna_checkout_v3_get_order($order, $payment_method);
+  $klarna_order = commerce_klarna_checkout_v3_get_order($order);
 
   if (!empty($klarna_order['html_snippet'])) {
     return [
