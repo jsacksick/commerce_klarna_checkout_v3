@@ -434,17 +434,15 @@ function _commerce_klarna_checkout_v3_build_order_lines($line_items) {
     }
     $order_line['unit_price'] = (int) $order_line['unit_price'];
 
-    if ($order_line['unit_price'] > 0) {
-      // Calculate the total discount.
-      foreach ($line_item_total['data']['components'] as $key => $component) {
-        if (strpos($component['name'], 'discount') !== 0) {
-          continue;
-        }
-        // The discount amount needs to be passed as a positive amount.
-        $order_line['total_discount_amount'] += -$component['price']['amount'];
+    // Calculate the total discount.
+    foreach ($line_item_total['data']['components'] as $key => $component) {
+      if (strpos($component['name'], 'discount') !== 0) {
+        continue;
       }
-      $order_line['total_discount_amount'] = (int) $order_line['total_discount_amount'];
+      // The discount amount needs to be passed as a positive amount.
+      $order_line['total_discount_amount'] += -$component['price']['amount'];
     }
+    $order_line['total_discount_amount'] = (int) $order_line['total_discount_amount'];
 
     // Calculate the tax.
     // If the tax module is enabled, try to get the tax rate.
