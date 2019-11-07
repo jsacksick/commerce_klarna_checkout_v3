@@ -593,15 +593,13 @@ function commerce_klarna_checkout_v3_acknowledge_order($order, $klarna_order_id 
       if (isset($klarna_order['merchant_requested']['additional_checkbox'])) {
         $order->data['commerce_klarna_checkout_additional_checkbox'] = $klarna_order['merchant_requested']['additional_checkbox'];
       }
-      // Pass the customer information alongside the billing + shipping address.
-      $customer = isset($klarna_order['customer']) ? $klarna_order['customer'] : [];
       if (!empty($klarna_order['billing_address'])) {
         $order->mail = $klarna_order['billing_address']['email'];
 
         // Create a billing customer profile if requested in the payment method
         // settings.
         if (!empty($payment_method['settings']['customer_profile']['create_billing_profile'])) {
-          $billing_profile = commerce_klarna_checkout_v3_create_customer_profile($klarna_order['billing_address'] + ['customer' => $customer], 'billing', $order->uid);
+          $billing_profile = commerce_klarna_checkout_v3_create_customer_profile($klarna_order, 'billing', $order->uid);
 
           if ($billing_profile && isset($order->commerce_customer_billing)) {
             $order->commerce_customer_billing[LANGUAGE_NONE][0]['profile_id'] = $billing_profile->profile_id;
@@ -611,7 +609,7 @@ function commerce_klarna_checkout_v3_acknowledge_order($order, $klarna_order_id 
       // Create a shipping customer profile if requested in the payment method
       // settings.
       if (!empty($klarna_order['shipping_address']) && !empty($payment_method['settings']['customer_profile']['create_shipping_profile'])) {
-        $shipping_profile = commerce_klarna_checkout_v3_create_customer_profile($klarna_order['shipping_address'] + ['customer' => $customer], 'shipping', $order->uid);
+        $shipping_profile = commerce_klarna_checkout_v3_create_customer_profile($klarna_order, 'shipping', $order->uid);
 
         if ($shipping_profile && isset($order->commerce_customer_shipping)) {
           $order->commerce_customer_shipping[LANGUAGE_NONE][0]['profile_id'] = $shipping_profile->profile_id;

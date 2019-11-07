@@ -26,15 +26,16 @@ function hook_commerce_klarna_checkout_v3_init_alter(&$order_data, $order) {
  *
  * @param $profile_wrapper
  *   The customer profile wrapper.
- * @param array $klarna_address
- *   The Klarna address.
+ * @param $klarna_order
+ *   The Klarna order.
  * @param $profile_type
  *   The customer profile type (e.g 'billing'|'shipping').
  */
-function hook_commerce_klarna_checkout_v3_create_customer_profile($profile_wrapper, $klarna_address, $profile_type) {
+function hook_commerce_klarna_checkout_v3_create_customer_profile($profile_wrapper, $klarna_order, $profile_type) {
   if ($profile_type != 'shipping') {
     return;
   }
+  $klarna_address = $klarna_order['shipping_address'];
   $profile_wrapper->my_custom_field = $klarna_address['care_of'];
 }
 

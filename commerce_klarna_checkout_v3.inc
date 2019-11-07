@@ -159,8 +159,8 @@ function commerce_klarna_checkout_v3_process_push($order, $payment_redirect_key)
  * Create a customer profile of the given type with the information retrieved
  * from Klarna.
  *
- * @param $klarna_address
- *   The billing|shipping address from Klarna.
+ * @param $klarna_order
+ *   The Klarna order object.
  * @param $profile_type
  *   The type of customer profile to create.
  * @param $uid
@@ -169,13 +169,19 @@ function commerce_klarna_checkout_v3_process_push($order, $payment_redirect_key)
  * @return mixed
  *   The saved customer profile, FALSE if there was an error.
  */
-function commerce_klarna_checkout_v3_create_customer_profile($klarna_address, $profile_type, $uid = 0) {
+function commerce_klarna_checkout_v3_create_customer_profile($klarna_order, $profile_type, $uid = 0) {
   if (!module_exists('commerce_customer')) {
     return FALSE;
   }
+  $klarna_address = $klarna_order[$profile_type . '_address'];
   // Create a new customer profile.
   $profile = commerce_customer_profile_new($profile_type, $uid);
   $profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $profile);
+
+  // Store the customer information in the profile data.
+  if (!empty($klarna_order['customer'])) {
+    $profile->data['klarna']['customer'] = $klarna_order['customer'];
+  }
 
   if (!isset($profile_wrapper->commerce_customer_address)) {
     return FALSE;
@@ -219,7 +225,7 @@ function commerce_klarna_checkout_v3_create_customer_profile($klarna_address, $p
       $address_wrapper->thoroughfare = $klarna_address['street_name'] .' '. $klarna_address['street_number'];
     }
 
-    module_invoke_all('commerce_klarna_checkout_v3_create_customer_profile', $profile_wrapper, $klarna_address, $profile_type);
+    module_invoke_all('commerce_klarna_checkout_v3_create_customer_profile', $profile_wrapper, $klarna_order, $profile_type);
     // Save the customer profile and return it.
     $profile_wrapper->save();
     return $profile;
