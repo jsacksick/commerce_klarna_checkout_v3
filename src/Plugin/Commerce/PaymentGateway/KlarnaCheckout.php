@@ -29,8 +29,8 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
     return [
       'username' => '',
       'password' => '',
-      'terms_path' => '',
       'locale' => 'sv-se',
+      'terms_path' => '',
       'update_billing_profile' => TRUE,
     ] + parent::defaultConfiguration();
   }
@@ -76,7 +76,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
 
     $form['update_billing_profile'] = [
       '#type' => 'checkbox',
-      '#title' => t('Update the billing customer profile with address information the customer enters at PayPal.'),
+      '#title' => t('Update the billing customer profile with address information the customer enters at Klarna.'),
       '#default_value' => $this->configuration['update_billing_profile'],
     ];
 
