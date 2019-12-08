@@ -182,7 +182,27 @@ class KlarnaManager implements KlarnaManagerInterface {
         'total_amount' => $this->toMinorUnits($order_item->getTotalPrice()),
       ];
     }
-    // @todo: Send the adjustments (promotion, shipping...).
+    $adjustments_type_mapping = [
+      'promotion' => 'discount',
+      'shipping' => 'shipping_fee',
+    ];
+    foreach ($adjustments as $adjustment) {
+      $adjustment_type = $adjustment->getType();
+      // Skip included adjustments and the ones we don't handle.
+      if ($adjustment->isIncluded() ||
+        !isset($adjustments_type_mapping[$adjustment_type])) {
+        continue;
+      }
+      $params['order_lines'][] = [
+        'reference' => $adjustment->getSourceId() ? $adjustment->getSourceId() : '',
+        'name' => $adjustment->getLabel(),
+        'quantity' => 1,
+        'tax_rate' => 0,
+        'total_tax_amount' => 0,
+        'unit_price' => $this->toMinorUnits($adjustment->getAmount()),
+        'total_amount' => $this->toMinorUnits($adjustment->getAmount()),
+      ];
+    }
 
     // Send the billing profile only if not null.
     if ($profiles['billing']) {
