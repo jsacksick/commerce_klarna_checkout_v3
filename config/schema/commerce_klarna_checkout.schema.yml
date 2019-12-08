@@ -7,6 +7,9 @@ commerce_payment.commerce_payment_gateway.plugin.klarna_checkout:
     password:
       type: string
       label: 'Password'
+    purchase_country:
+      type: string
+      label: 'Purchase country'
     locale:
       type: string
       label: 'Language'
@@ -16,3 +19,12 @@ commerce_payment.commerce_payment_gateway.plugin.klarna_checkout:
     update_billing_profile:
       type: boolean
       label: 'Update billing profile'
+    allowed_customer_types:
+      type: sequence
+      label: 'Allowed customer types'
+      sequence:
+        type: string
+        label: 'Customer type'
+    allow_separate_shipping_address:
+      type: boolean
+      label: 'Allow separate shipping address'

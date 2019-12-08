@@ -1,0 +1,9 @@
+services:
+  commerce_klarna_checkout.manager_factory:
+    class: Drupal\commerce_klarna_checkout\KlarnaManagerFactory
+    arguments: ['@entity_type.manager', '@commerce_order.adjustment_transformer', '@event_dispatcher']
+
+  commerce_klarna_checkout.manager:
+    abstract: true
+    class: Drupal\commerce_klarna_checkout\KlarnaManager
+    factory: commerce_klarna_checkout.manager_factory
