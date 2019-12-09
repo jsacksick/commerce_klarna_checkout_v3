@@ -7,15 +7,23 @@ use Drupal\commerce_order\Entity\OrderInterface;
 interface KlarnaManagerInterface {
 
   /**
-   * Gets an order from Klarna
+   * Acknowledge a Klarna order.
    *
    * @param string $klarna_order_id
    *   The Klarna order ID.
-   *
-   * @return \Klarna\Rest\Checkout\Order
-   *   The Klarna checkout order.
    */
-  public function getOrder($klarna_order_id);
+  public function acknowledgeOrder($klarna_order_id);
+
+  /**
+   * Creates a capture for the given order.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   The order.
+   *
+   * @return \Klarna\Rest\OrderManagement\Capture
+   *   The capture resource.
+   */
+  public function captureOrder(OrderInterface $order);
 
   /**
    * Creates a new Klarna checkout order for the given order.
@@ -36,6 +44,17 @@ interface KlarnaManagerInterface {
    *   The Klarna checkout order.
    */
   public function createOrder(OrderInterface $order, array $merchant_urls);
+
+  /**
+   * Gets an order from Klarna
+   *
+   * @param string $klarna_order_id
+   *   The Klarna order ID.
+   *
+   * @return \Klarna\Rest\Checkout\Order
+   *   The Klarna checkout order.
+   */
+  public function getOrder($klarna_order_id);
 
   /**
    * Updates the order in Klarna.

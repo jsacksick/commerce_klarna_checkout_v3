@@ -15,6 +15,7 @@ interface KlarnaManagerFactoryInterface {
    *   - mode: The API mode (e.g "test" or "live").
    *   - username: The API username.
    *   - password: The API password.
+   *   - terms_path: The path to the terms and conditions page.
    *
    * @return \Drupal\commerce_klarna_checkout\KlarnaManagerInterface
    *   The Klarna manager.

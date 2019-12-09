@@ -7,3 +7,8 @@ services:
     abstract: true
     class: Drupal\commerce_klarna_checkout\KlarnaManager
     factory: commerce_klarna_checkout.manager_factory
+
+  logger.channel.commerce_klarna_checkout:
+    class: Drupal\Core\Logger\LoggerChannel
+    factory: logger.factory:get
+    arguments: ['commerce_klarna_checkout']

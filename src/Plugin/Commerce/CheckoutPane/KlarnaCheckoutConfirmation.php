@@ -11,15 +11,15 @@ use Drupal\Core\Render\Markup;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Provides the Klarna checkout completion snippet.
+ * Provides the Klarna checkout confirmation snippet.
  *
  * @CommerceCheckoutPane(
- *   id = "commerce_klarna_checkout_completion",
+ *   id = "commerce_klarna_checkout_confirmation",
  *   label = @Translation("Klarna Confirmation message"),
  *   default_step = "complete",
  * )
  */
-class KlarnaCompletion extends CheckoutPaneBase {
+class KlarnaCheckoutConfirmation extends CheckoutPaneBase {
 
   /**
    * The Klarna manager factory.
@@ -81,7 +81,6 @@ class KlarnaCompletion extends CheckoutPaneBase {
       $klarna_manager = $this->klarnaManagerFactory->get($payment_gateway_plugin->getConfiguration());
       $klarna_order = $klarna_manager->getOrder($klarna_order_id);
 
-      // @todo: Acknowledge the order from there.
       $pane_form['klarna_completion'] = [
         '#markup' => Markup::create($klarna_order['html_snippet']),
       ];

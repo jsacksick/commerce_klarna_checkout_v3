@@ -70,6 +70,10 @@ class KlarnaCheckoutForm extends PaymentOffsiteForm implements ContainerInjectio
     if (!isset($klarna_order)) {
       try {
         $klarna_order = $klarna_manager->createOrder($order, $merchant_urls);
+        // @todo: Save the Klarna order ID in a custom table, to avoid saving
+        // the order.
+        $order->setData('klarna_order_id', $klarna_order->getId());
+        $order->save();
       }
       catch (\Exception $exception) {
         throw new PaymentGatewayException($exception->getMessage());

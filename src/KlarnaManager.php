@@ -93,10 +93,49 @@ class KlarnaManager implements KlarnaManagerInterface {
   /**
    * {@inheritdoc}
    */
-  public function getOrder($klarna_order_id) {
-    $klarna_order = new KlarnaOrder($this->connector);
-    $klarna_order->fetch();
-    return $klarna_order;
+  public function acknowledgeOrder($klarna_order_id) {
+    $klarna_order = new \Klarna\Rest\OrderManagement\Order($this->connector, $klarna_order_id);
+    $klarna_order->acknowledge();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function captureOrder(OrderInterface $order) {
+    if (!$order->getData('klarna_order_id')) {
+      throw new \InvalidArgumentException(sprintf('Missing Klarna order ID for order %.', $order->id()));
+    }
+    // Capture the order total.
+    $params = [
+      'captured_amount' => $this->toMinorUnits($order->getTotalPrice()),
+      'order_lines' => $this->buildOrderLines($order),
+    ];
+    $klarna_order = new \Klarna\Rest\OrderManagement\Order($this->connector, $order->getData('klarna_order_id'));
+
+    try {
+      $capture = $klarna_order->createCapture($params);
+
+      // If no exception was thrown, assume everything went allright, update
+      // the payment.
+      /** @var \Drupal\commerce_payment\PaymentStorageInterface $payment_storage */
+      $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
+      $payments = $payment_storage->loadMultipleByOrder($order);
+
+      // There's no easy way to identify which payment maps to this capture, so
+      // pick the first one.
+      if ($payments) {
+        $payment = reset($payment);
+        if ($payment->getState()->getId() === 'authorization') {
+          $payment->setState('completed');
+          $payment->save();
+        }
+      }
+
+      return $capture;
+    }
+    catch (\Exception $exception) {
+      throw $exception;
+    }
   }
 
   /**
@@ -114,9 +153,19 @@ class KlarnaManager implements KlarnaManagerInterface {
   /**
    * {@inheritdoc}
    */
+  public function getOrder($klarna_order_id) {
+    $klarna_order = new KlarnaOrder($this->connector);
+    $klarna_order->fetch();
+    return $klarna_order;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function updateOrder(OrderInterface $order, array $merchant_urls) {
     $params = $this->buildOrderRequest($order, $merchant_urls);
     $klarna_order = new KlarnaOrder($this->connector, $order->getData('klarna_order_id'));
+    // @todo: Dispatch an event to allow altering the request body.
     $klarna_order->update($params);
     return $klarna_order;
   }
@@ -157,13 +206,40 @@ class KlarnaManager implements KlarnaManagerInterface {
       'options' => [
         'allow_separate_shipping_address' => $this->config['allow_separate_shipping_address'],
       ],
-      'order_lines' => [],
+      'order_lines' => $this->buildOrderLines($order),
     ];
 
     if (!empty($this->config['allowed_customer_types'])) {
       $params['options']['allowed_customer_types'] = $this->config['allowed_customer_types'];
     }
 
+    // Send the billing profile only if not null.
+    if ($profiles['billing']) {
+      $billing_address = $this->buildAddress($profiles['billing']);
+      $params['billing_address'] = $billing_address;
+
+      if ($order->getEmail()) {
+        $params['billing_address']['email'] = $order->getEmail();
+      }
+    }
+
+    $tax_total = $this->getAdjustmentsTotal($adjustments, ['tax']);
+    $params['order_tax_amount'] = $tax_total ? Calculator::trim($tax_total->getNumber()) : 0;
+    return $params;
+  }
+
+  /**
+   * Builds the order lines for Klarna.
+   *
+   * @param \Drupal\commerce_order\Entity\OrderInterface $order
+   *   The order.
+   *
+   * @return array
+   *   The order lines as expected by Klarna.
+   */
+  protected function buildOrderLines(OrderInterface $order) {
+    $adjustments = $order->collectAdjustments();
+    $order_lines = [];
     foreach ($order->getItems() as $order_item) {
       $tax_rate = 0;
       foreach ($order_item->getAdjustments() as $adjustment) {
@@ -181,7 +257,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       }
 
       $tax_total = $this->getAdjustmentsTotal($order_item->getAdjustments(['tax']));
-      $params['order_lines'][] = [
+      $order_lines[] = [
         'reference' => $reference,
         'name' => $order_item->label(),
         'quantity' => (int) $order_item->getQuantity(),
@@ -202,7 +278,7 @@ class KlarnaManager implements KlarnaManagerInterface {
         !isset($adjustments_type_mapping[$adjustment_type])) {
         continue;
       }
-      $params['order_lines'][] = [
+      $order_lines[] = [
         'reference' => $adjustment->getSourceId() ? $adjustment->getSourceId() : '',
         'name' => $adjustment->getLabel(),
         'type' => $adjustments_type_mapping[$adjustment_type],
@@ -214,19 +290,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       ];
     }
 
-    // Send the billing profile only if not null.
-    if ($profiles['billing']) {
-      $billing_address = $this->buildAddress($profiles['billing']);
-      $params['billing_address'] = $billing_address;
-
-      if ($order->getEmail()) {
-        $params['billing_address']['email'] = $order->getEmail();
-      }
-    }
-
-    $tax_total = $this->getAdjustmentsTotal($adjustments, ['tax']);
-    $params['order_tax_amount'] = $tax_total ? Calculator::trim($tax_total->getNumber()) : 0;
-    return $params;
+    return $order_lines;
   }
 
   /**
