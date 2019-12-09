@@ -224,7 +224,7 @@ class KlarnaManager implements KlarnaManagerInterface {
     }
 
     $tax_total = $this->getAdjustmentsTotal($adjustments, ['tax']);
-    $params['order_tax_amount'] = $tax_total ? Calculator::trim($tax_total->getNumber()) : 0;
+    $params['order_tax_amount'] = $tax_total ? $this->toMinorUnits($tax_total) : 0;
     return $params;
   }
 
