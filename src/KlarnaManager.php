@@ -205,6 +205,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       $params['order_lines'][] = [
         'reference' => $adjustment->getSourceId() ? $adjustment->getSourceId() : '',
         'name' => $adjustment->getLabel(),
+        'type' => $adjustments_type_mapping[$adjustment_type],
         'quantity' => 1,
         'tax_rate' => 0,
         'total_tax_amount' => 0,
