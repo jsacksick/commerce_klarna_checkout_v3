@@ -7,6 +7,17 @@ use Drupal\commerce_order\Entity\OrderInterface;
 interface KlarnaManagerInterface {
 
   /**
+   * Gets an order from Klarna
+   *
+   * @param string $klarna_order_id
+   *   The Klarna order ID.
+   *
+   * @return \Klarna\Rest\Checkout\Order
+   *   The Klarna checkout order.
+   */
+  public function getOrder($klarna_order_id);
+
+  /**
    * Creates a new Klarna checkout order for the given order.
    *
    * @param \Drupal\commerce_order\Entity\OrderInterface $order

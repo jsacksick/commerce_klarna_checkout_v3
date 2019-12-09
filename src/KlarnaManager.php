@@ -93,6 +93,15 @@ class KlarnaManager implements KlarnaManagerInterface {
   /**
    * {@inheritdoc}
    */
+  public function getOrder($klarna_order_id) {
+    $klarna_order = new KlarnaOrder($this->connector);
+    $klarna_order->fetch();
+    return $klarna_order;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function createOrder(OrderInterface $order, array $merchant_urls) {
     // @todo: Dispatch an event to allow altering the request body.
     $params = $this->buildOrderRequest($order, $merchant_urls);
