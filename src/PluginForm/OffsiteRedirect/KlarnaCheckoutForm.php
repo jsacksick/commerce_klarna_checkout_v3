@@ -3,6 +3,7 @@
 namespace Drupal\commerce_klarna_checkout\PluginForm\OffsiteRedirect;
 
 use Drupal\commerce_klarna_checkout\KlarnaManagerFactoryInterface;
+use Drupal\commerce_order\Entity\Order;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PluginForm\PaymentOffsiteForm;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
@@ -73,6 +74,7 @@ class KlarnaCheckoutForm extends PaymentOffsiteForm implements ContainerInjectio
         // @todo: Save the Klarna order ID in a custom table, to avoid saving
         // the order.
         $order->setData('klarna_order_id', $klarna_order->getId());
+        $order->setRefreshState(Order::REFRESH_SKIP);
         $order->save();
       }
       catch (\Exception $exception) {
