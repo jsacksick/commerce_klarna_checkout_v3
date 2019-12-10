@@ -154,7 +154,7 @@ class KlarnaManager implements KlarnaManagerInterface {
    * {@inheritdoc}
    */
   public function getOrder($klarna_order_id) {
-    $klarna_order = new KlarnaOrder($this->connector);
+    $klarna_order = new KlarnaOrder($this->connector, $klarna_order_id);
     $klarna_order->fetch();
     return $klarna_order;
   }
