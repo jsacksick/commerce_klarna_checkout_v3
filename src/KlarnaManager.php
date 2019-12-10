@@ -214,7 +214,7 @@ class KlarnaManager implements KlarnaManagerInterface {
     }
 
     // Send the billing profile only if not null.
-    if ($profiles['billing']) {
+    if (isset($profiles['billing'])) {
       $billing_address = $this->buildAddress($profiles['billing']);
       $params['billing_address'] = $billing_address;
 
@@ -223,7 +223,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       }
     }
 
-    $tax_total = $this->getAdjustmentsTotal($adjustments, ['tax']);
+    $tax_total = $this->getAdjustmentsTotal($adjustments, ['tax'], FALSE);
     $params['order_tax_amount'] = $tax_total ? $this->toMinorUnits($tax_total) : 0;
     return $params;
   }
@@ -242,11 +242,9 @@ class KlarnaManager implements KlarnaManagerInterface {
     $order_lines = [];
     foreach ($order->getItems() as $order_item) {
       $tax_rate = 0;
-      foreach ($order_item->getAdjustments() as $adjustment) {
-        if ($adjustment->getType() == 'tax') {
-          $tax_rate = $adjustment->getPercentage();
-          break;
-        }
+      $tax_adjustments = $order_item->getAdjustments(['tax']);
+      if ($tax_adjustments) {
+        $tax_rate = $tax_adjustments[0]->getPercentage();
       }
       // Fallback to the order item ID.
       $reference = $order_item->id();
@@ -256,7 +254,7 @@ class KlarnaManager implements KlarnaManagerInterface {
         $reference = $purchased_entity->getSku();
       }
 
-      $tax_total = $this->getAdjustmentsTotal($order_item->getAdjustments(['tax']));
+      $tax_total = $this->getAdjustmentsTotal($tax_adjustments, [], FALSE);
       $order_lines[] = [
         'reference' => $reference,
         'name' => $order_item->label(),
@@ -318,18 +316,20 @@ class KlarnaManager implements KlarnaManagerInterface {
   }
 
   /**
-   * Get the total for the given adjustments.
+   * Calculates the total for the given adjustments.
    *
    * @param \Drupal\commerce_order\Adjustment[] $adjustments
    *   The adjustments.
    * @param string[] $adjustment_types
    *   The adjustment types to include in the calculation.
    *   Examples: fee, promotion, tax. Defaults to all adjustment types.
+   * @param bool $skip_included
+   *   (optional) Whether to skip the included adjustments.
    *
    * @return \Drupal\commerce_price\Price|null
    *   The adjustments total, or NULL if no matching adjustments were found.
    */
-  protected function getAdjustmentsTotal(array $adjustments, array $adjustment_types = []) {
+  protected function getAdjustmentsTotal(array $adjustments, array $adjustment_types = [], $skip_included = TRUE) {
     $adjustments_total = NULL;
     $matching_adjustments = [];
 
@@ -337,7 +337,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       if ($adjustment_types && !in_array($adjustment->getType(), $adjustment_types)) {
         continue;
       }
-      if ($adjustment->isIncluded()) {
+      if ($skip_included && $adjustment->isIncluded()) {
         continue;
       }
       $matching_adjustments[] = $adjustment;
@@ -373,7 +373,7 @@ class KlarnaManager implements KlarnaManagerInterface {
       $number = Calculator::multiply($number, pow(10, $fraction_digits));
     }
 
-    return round($number, 0);
+    return (int) round($number, 0);
   }
 
 }
