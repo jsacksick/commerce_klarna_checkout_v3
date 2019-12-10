@@ -301,7 +301,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
       return $payment;
     }
     // Check whether the payment needs to be captured.
-    $capture = !$this->configuration['capture'];
+    $capture = !empty($this->configuration['capture']);
 
     try {
       $klarna_manager->acknowledgeOrder($klarna_order_id);
@@ -378,9 +378,8 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
 
     try {
       // @todo: Check the capture response?
-      $capture = $klarna_manager->captureOrder($payment->getOrder());
+      $capture = $klarna_manager->captureOrder($payment->getOrder(), $amount);
 
-      $this->logger->debug('Capture response: @capture', ['@capture' => print_r($capture, TRUE)]);
       $payment->setState('completed');
       $payment->setAmount($amount);
       $payment->save();
@@ -448,6 +447,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
       if (!isset($mapping[$key])) {
         continue;
       }
+      $value = $key === 'country' ? strtoupper($value) : $value;
       $profile->address->{$mapping[$key]} = $value;
     }
   }
