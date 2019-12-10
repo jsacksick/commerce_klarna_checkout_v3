@@ -4,6 +4,7 @@ namespace Drupal\commerce_klarna_checkout\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_klarna_checkout\KlarnaManagerFactoryInterface;
 use Drupal\commerce_order\Entity\OrderInterface;
+use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Exception\PaymentGatewayException;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
 use Drupal\commerce_payment\PaymentTypeManager;
@@ -31,7 +32,7 @@ use Symfony\Component\HttpFoundation\Request;
  *   requires_billing_information = FALSE,
  * )
  */
-class KlarnaCheckout extends OffsitePaymentGatewayBase {
+class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckoutInterface {
 
   /**
    * The Klarna manager factory.
@@ -100,6 +101,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
     return [
       'username' => '',
       'password' => '',
+      'capture' => FALSE,
       'purchase_country' => '',
       'locale' => 'sv-se',
       'terms_path' => '',
@@ -125,6 +127,16 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
       '#type' => 'textfield',
       '#title' => $this->t('Password'),
       '#default_value' => $this->configuration['password'],
+    ];
+
+    $form['capture'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Transaction mode'),
+      '#options' => [
+        TRUE => $this->t('Authorize and capture'),
+        FALSE => $this->t('Authorize only (requires manual capture after checkout)'),
+      ],
+      '#default_value' => (int) $this->configuration['capture'],
     ];
 
     $form['purchase_country'] = [
@@ -211,6 +223,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
     $values = $form_state->getValue($form['#parents']);
     $this->configuration['username'] = $values['username'];
     $this->configuration['password'] = $values['password'];
+    $this->configuration['capture'] = !empty($values['capture']);
     $this->configuration['purchase_country'] = $values['purchase_country'];
     $this->configuration['locale'] = $values['locale'];
     $this->configuration['terms_path'] = $values['terms_path'];
@@ -238,32 +251,9 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
    * {@inheritdoc}
    */
   public function onReturn(OrderInterface $order, Request $request) {
-    $klarna_manager = $this->klarnaManagerFactory->get($this->getConfiguration());
-
-    try {
-      $klarna_order = $klarna_manager->getOrder($order->getData('klarna_order_id'));
-    }
-    catch (\Exception $exception) {
-      throw new PaymentGatewayException($exception->getMessage());
-    }
-
-    if (!isset($klarna_order['status']) || $klarna_order['status'] !== 'checkout_complete') {
-      throw new PaymentGatewayException(sprintf('Unexpected Klarna order status (Expected: %s, Actual: %s)', 'checkout_complete', $klarna_order['status']));
-    }
-
-    $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
-    $payment = $payment_storage->create([
-      'state' => 'authorization',
-      // Use the amount we get from Klarna, rather than the order total, since
-      // it might be different.
-      'amount' => $this->fromMinorUnits($klarna_order['order_amount'], $klarna_order['purchase_currency']),
-      'payment_gateway' => $this->entityId,
-      'order_id' => $order->id(),
-      'test' => $this->getMode() == 'test',
-      'remote_id' => $klarna_order->getId(),
-      'remote_state' => $klarna_order['status'],
-    ]);
-    $payment->save();
+    // According to the Klarna API documentation, there should be an attempt to
+    // acknowledge the order from the confirmation callback.
+    $this->acknowledgeOrder($order->getData('klarna_order_id'));
   }
 
   /**
@@ -276,79 +266,136 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
       $this->logger->error('Cannot acknowledge the Klarna order: No order ID provided.');
       return NULL;
     }
+    try {
+      $this->acknowledgeOrder($klarna_order_id);
+    }
+    catch (PaymentGatewayException $exception) {
+      $this->logger->error($exception->getMessage());
+      return NULL;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function acknowledgeOrder($klarna_order_id, OrderInterface $order = NULL) {
     $klarna_manager = $this->klarnaManagerFactory->get($this->getConfiguration());
 
     try {
       $klarna_order = $klarna_manager->getOrder($klarna_order_id);
     }
     catch (\Exception $exception) {
-      $this->logger->debug($exception->getMessage());
-      return NULL;
+      throw new PaymentGatewayException($exception->getMessage());
     }
 
     if (!isset($klarna_order['status']) || $klarna_order['status'] !== 'checkout_complete') {
-      $this->logger->error('Unexpected Klarna order status (Expected: @expected, Actual: @actual)', ['@expected' => 'checkout_complete', '@actual' => $klarna_order['status']]);
-      return NULL;
+      throw new PaymentGatewayException('Unexpected Klarna order status (Expected: @expected, Actual: @actual)', ['@expected' => 'checkout_complete', '@actual' => $klarna_order['status']]);
     }
 
     /** @var \Drupal\commerce_payment\PaymentStorageInterface $payment_storage */
     $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
     $payment = $payment_storage->loadByRemoteId($klarna_order_id);
 
-    $authorization_amount = $this->fromMinorUnits($klarna_order['order_amount'], $klarna_order['purchase_currency']);
-    // It's still an authorization, payment has to be captured via the order
-    // management API.
-    if (!$payment) {
-      $this->logger->notice('Cannot find a matching payment for the Klarna order ID @klarna_order_id, creating one.', ['@klarna_order_id' => $klarna_order_id]);
-      $payment = $payment_storage->create([
-        'state' => 'authorization',
-        // Use the amount we get from Klarna, rather than the order total, since
-        // it might be different.
-        'amount' => $authorization_amount,
-        'payment_gateway' => $this->entityId,
-        // The order_id is passed as the "merchant_reference2", so use that for
-        // the payment.
-        'order_id' => $klarna_order['merchant_reference2'],
-        'test' => $this->getMode() == 'test',
-        'remote_id' => $klarna_order->getId(),
-        'remote_state' => $klarna_order['status'],
-      ]);
-      $payment->save();
+    // If there's already a payment for that order, no need to recreate one.
+    if ($payment) {
+      return $payment;
     }
-
-    $order = $payment->getOrder();
-    $order_total = $order->getTotalPrice();
-    if ($authorization_amount->compareTo($order_total) !== 0) {
-      $this->logger->notice('Order total mismatch: (Klarna total: @klarna_total, Order total: @order_total', ['@klarna_total' => $authorization_amount->getNumber(), '@order_total' => $order_total->getNumber()]);
-    }
-
-    // Update the billing profile if configured to do so.
-    if (!empty($this->configuration['update_billing_profile'])) {
-      $profile = $order->getBillingProfile();
-      $save_order = FALSE;
-      if (!$profile) {
-        $profile = $this->entityTypeManager->getStorage('profile')->create([
-          'uid' => 0,
-          'type' => 'customer',
-        ]);
-        $save_order = TRUE;
-      }
-      $this->populateProfile($profile, $klarna_order['billing_address']);
-      $profile->save();
-
-      if ($save_order) {
-        $order->setBillingProfile($profile);
-        $order->save();
-      }
-    }
+    // Check whether the payment needs to be captured.
+    $capture = !$this->configuration['capture'];
 
     try {
       $klarna_manager->acknowledgeOrder($klarna_order_id);
     }
     catch (\Exception $exception) {
       $this->logger->error('Cannot acknowledge the order ID @klarna_order_id', ['@klarna_order_id' => $klarna_order_id]);
-      $this->logger->debug($exception->getMessage());
+      throw new PaymentGatewayException($exception->getMessage());
     }
+
+    $payment_amount = $this->fromMinorUnits($klarna_order['order_amount'], $klarna_order['purchase_currency']);
+    $payment = $payment_storage->create([
+      'state' => 'authorization',
+      // Use the amount we get from Klarna, rather than the order total, since
+      // it might be different.
+      'amount' => $payment_amount,
+      'payment_gateway' => $this->entityId,
+      // The order_id is passed as the "merchant_reference2", so use that for
+      // the payment, if no order was passed.
+      'order_id' => $order ? $order->id() : $klarna_order['merchant_reference2'],
+      'test' => $this->getMode() == 'test',
+      'remote_id' => $klarna_order->getId(),
+      'remote_state' => $klarna_order['status'],
+    ]);
+    $order = $order ?: $payment->getOrder();
+    $order_total = $order->getTotalPrice();
+
+    if ($payment_amount->compareTo($order_total) !== 0) {
+      $this->logger->notice('Order total mismatch: (Klarna total: @klarna_total, Order total: @order_total', [
+        '@klarna_total' => $payment_amount->getNumber(),
+        '@order_total' => $order_total->getNumber(),
+      ]);
+    }
+
+    // Update the billing profile if configured to do so.
+    if (!empty($this->configuration['update_billing_profile'])) {
+      $profile = $order->getBillingProfile();
+      if (!$profile) {
+        $profile = $this->entityTypeManager->getStorage('profile')->create([
+          'uid' => 0,
+          'type' => 'customer',
+        ]);
+        $order->setBillingProfile($profile);
+      }
+      $this->populateProfile($profile, $klarna_order['billing_address']);
+      $profile->save();
+    }
+
+    if (isset($klarna_order['billing_address']['email'])) {
+      $order->setEmail($klarna_order['billing_address']['email']);
+    }
+
+    // We have to save the order since the billing profile and/or the email were
+    // potentially updated.
+    $order->save();
+
+    if (!$capture) {
+      $payment->save();
+    }
+    else {
+      $this->capturePayment($payment);
+    }
+
+    return $payment;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function capturePayment(PaymentInterface $payment, Price $amount = NULL) {
+    $this->assertPaymentState($payment, ['authorization']);
+    // If not specified, capture the entire amount.
+    $amount = $amount ?: $payment->getAmount();
+    $klarna_manager = $this->klarnaManagerFactory->get($this->getConfiguration());
+
+    try {
+      // @todo: Check the capture response?
+      $capture = $klarna_manager->captureOrder($payment->getOrder());
+
+      $this->logger->debug('Capture response: @capture', ['@capture' => print_r($capture, TRUE)]);
+      $payment->setState('completed');
+      $payment->setAmount($amount);
+      $payment->save();
+    }
+    catch (\Exception $exception) {
+      throw new PaymentGatewayException($exception->getMessage());
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function voidPayment(PaymentInterface $payment) {
+    $this->assertPaymentState($payment, ['authorization']);
+    // @todo: Implement voiding a payment.
   }
 
   /**
@@ -356,8 +403,8 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
    *
    * For example, 999 USD becomes 9.99.
    *
-   * @param $amount
-   *   The amount in minor unit
+   * @param mixed $amount
+   *   The amount in minor unit.
    * @param string $currency_code
    *   The currency code.
    *
@@ -394,8 +441,8 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase {
       'region' => 'administrative_area',
       'postal_code' => 'postal_code',
       'country' => 'country_code',
-      'given_name' =>'given_name',
-      'family_name' =>'family_name',
+      'given_name' => 'given_name',
+      'family_name' => 'family_name',
     ];
     foreach ($address as $key => $value) {
       if (!isset($mapping[$key])) {

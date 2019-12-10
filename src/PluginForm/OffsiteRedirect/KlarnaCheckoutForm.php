@@ -62,7 +62,7 @@ class KlarnaCheckoutForm extends PaymentOffsiteForm implements ContainerInjectio
         $klarna_order = $klarna_manager->updateOrder($order, $merchant_urls);
       }
       catch (\Exception $exception) {
-        // the Klarna order ID might be invalid, proceed to creating a new one.
+        // The Klarna order ID might be invalid, proceed to creating a new one.
         $klarna_order = NULL;
       }
     }

@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Url;
 use Drupal\profile\Entity\ProfileInterface;
 use Klarna\Rest\Checkout\Order as KlarnaOrder;
+use Klarna\Rest\OrderManagement\Order as KlarnaOrderManagement;
 use Klarna\Rest\Transport\ConnectorInterface;
 use Klarna\Rest\Transport\GuzzleConnector;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -94,48 +95,25 @@ class KlarnaManager implements KlarnaManagerInterface {
    * {@inheritdoc}
    */
   public function acknowledgeOrder($klarna_order_id) {
-    $klarna_order = new \Klarna\Rest\OrderManagement\Order($this->connector, $klarna_order_id);
+    $klarna_order = new KlarnaOrderManagement($this->connector, $klarna_order_id);
     $klarna_order->acknowledge();
   }
 
   /**
    * {@inheritdoc}
    */
-  public function captureOrder(OrderInterface $order) {
+  public function captureOrder(OrderInterface $order, $amount = NULL) {
     if (!$order->getData('klarna_order_id')) {
       throw new \InvalidArgumentException(sprintf('Missing Klarna order ID for order %.', $order->id()));
     }
     // Capture the order total.
+    $amount_to_capture = $amount ?: $order->getTotalPrice();
     $params = [
-      'captured_amount' => $this->toMinorUnits($order->getTotalPrice()),
+      'captured_amount' => $this->toMinorUnits($amount_to_capture),
       'order_lines' => $this->buildOrderLines($order),
     ];
-    $klarna_order = new \Klarna\Rest\OrderManagement\Order($this->connector, $order->getData('klarna_order_id'));
-
-    try {
-      $capture = $klarna_order->createCapture($params);
-
-      // If no exception was thrown, assume everything went allright, update
-      // the payment.
-      /** @var \Drupal\commerce_payment\PaymentStorageInterface $payment_storage */
-      $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
-      $payments = $payment_storage->loadMultipleByOrder($order);
-
-      // There's no easy way to identify which payment maps to this capture, so
-      // pick the first one.
-      if ($payments) {
-        $payment = reset($payment);
-        if ($payment->getState()->getId() === 'authorization') {
-          $payment->setState('completed');
-          $payment->save();
-        }
-      }
-
-      return $capture;
-    }
-    catch (\Exception $exception) {
-      throw $exception;
-    }
+    $klarna_order = new KlarnaOrderManagement($this->connector, $order->getData('klarna_order_id'));
+    return $klarna_order->createCapture($params);
   }
 
   /**
@@ -298,6 +276,10 @@ class KlarnaManager implements KlarnaManagerInterface {
    *   The profile to build an address for.
    *
    * @return array
+   *   The formatted address for use in Klarna API calls.
+   *
+   * @throws \Drupal\Core\TypedData\Exception\MissingDataException
+   *   If the complex data structure is unset and no item can be created.
    */
   protected function buildAddress(ProfileInterface $profile) {
     /** @var \Drupal\address\AddressInterface $address */

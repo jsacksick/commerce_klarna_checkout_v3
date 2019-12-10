@@ -99,7 +99,6 @@ class KlarnaCheckoutConfirmation extends CheckoutPaneBase {
       return FALSE;
     }
     /** @var \Drupal\commerce_payment\Entity\PaymentGatewayInterface $payment_gateway */
-    /** @noinspection PhpUndefinedFieldInspection */
     $payment_gateway = $this->order->payment_gateway->entity;
     return $payment_gateway && $payment_gateway->getPluginId() == 'klarna_checkout';
   }

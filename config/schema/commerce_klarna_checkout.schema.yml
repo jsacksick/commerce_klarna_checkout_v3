@@ -7,6 +7,9 @@ commerce_payment.commerce_payment_gateway.plugin.klarna_checkout:
     password:
       type: string
       label: 'Password'
+    capture:
+      type: boolean
+      label: 'Transaction mode'
     purchase_country:
       type: string
       label: 'Purchase country'
