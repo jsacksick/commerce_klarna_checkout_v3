@@ -302,10 +302,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
     catch (\Exception $exception) {
       throw new PaymentGatewayException($exception->getMessage());
     }
-
-    if (!isset($klarna_order['status']) || $klarna_order['status'] !== 'checkout_complete') {
-      throw new PaymentGatewayException('Unexpected Klarna order status (Expected: @expected, Actual: @actual)', ['@expected' => 'checkout_complete', '@actual' => $klarna_order['status']]);
-    }
+    $this->logger->debug('Klarna order status: @status', ['@status' => $klarna_order['status']]);
 
     /** @var \Drupal\commerce_payment\PaymentStorageInterface $payment_storage */
     $payment_storage = $this->entityTypeManager->getStorage('commerce_payment');
@@ -332,7 +329,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
       // Use the amount we get from Klarna, rather than the order total, since
       // it might be different.
       'amount' => $payment_amount,
-      'payment_gateway' => $this->entityId,
+      'payment_gateway' => $this->parentEntity ? $this->parentEntity->id() : $this->entityId,
       // The order_id is passed as the "merchant_reference2", so use that for
       // the payment, if no order was passed.
       'order_id' => $order ? $order->id() : $klarna_order['merchant_reference2'],
