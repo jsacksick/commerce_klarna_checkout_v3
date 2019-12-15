@@ -165,6 +165,9 @@ class KlarnaManager implements KlarnaManagerInterface {
         throw new \InvalidArgumentException(sprintf('Missing required key %s in the provided $merchant_urls array.', $required_key));
       }
     }
+    if (is_null($order->getTotalPrice())) {
+      throw new \InvalidArgumentException(sprintf('Cannot build the order request with an empty order total for order id %s.', $order->id()));
+    }
     $profiles = $order->collectProfiles();
     $adjustments = $order->collectAdjustments();
     $params = [
