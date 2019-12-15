@@ -367,6 +367,7 @@ class KlarnaCheckout extends OffsitePaymentGatewayBase implements KlarnaCheckout
 
     // We have to save the order since the billing profile and/or the email were
     // potentially updated.
+    $order->setData('klarna_order_acknowledged', TRUE);
     $order->save();
 
     if (!$capture) {
